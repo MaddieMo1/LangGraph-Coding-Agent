@@ -1,3 +1,42 @@
+# LangGraph Coding Agent
+
+<p align="center">
+  <b>A Multi-Agent AI Coding Assistant built with LangGraph, LangChain, and DeepSeek.</b>
+</p>
+
+<p align="center">
+  Support for architecture planning, file planning, code generation, code review, and automatic repair loop.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-blue" />
+  <img src="https://img.shields.io/badge/LangGraph-Multi--Agent-orange" />
+  <img src="https://img.shields.io/badge/LangChain-LLM-green" />
+  <img src="https://img.shields.io/badge/DeepSeek-API-purple" />
+  <img src="https://img.shields.io/badge/Status-v0.1.0-success" />
+  <img src="https://img.shields.io/badge/License-MIT-lightgrey" />
+</p>
+
+---
+
+## Overview
+
+LangGraph Coding Agent is an enterprise-oriented multi-agent coding assistant project.
+
+It explores how LLM-based agents can collaborate to automate software engineering workflows, including:
+
+- requirement understanding
+- architecture design
+- file planning
+- multi-file code generation
+- code checking
+- code review
+- automatic repair loop
+
+The current version focuses on building a complete **Multi-Agent Coding Workflow** with **LangGraph**.
+
+---
+
 \# LangGraph Coding Agent
 
 
@@ -559,6 +598,19 @@ DEEPSEEK\_API\_KEY
 
 
 \# License
+
+
+## Table of Contents
+
+- [Features](#features)
+- [System Architecture](#system-architecture)
+- [Workflow](#workflow)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Example](#example)
+- [Roadmap](#roadmap)
+- [License](#license)
 
 
 
