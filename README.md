@@ -1,4 +1,7 @@
 # LangGraph Coding Agent
+<p align="center">
+  <img src="./assets/banner.png" alt="LangGraph Coding Agent Banner" />
+</p>
 
 <p align="center">
   <b>A Multi-Agent AI Coding Assistant built with LangGraph, LangChain and DeepSeek.</b>
