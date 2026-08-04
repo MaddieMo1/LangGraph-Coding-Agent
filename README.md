@@ -1,306 +1,252 @@
-\# LangGraph Coding Agent
+# LangGraph Coding Agent
+<p align="center">
+  <img src="./assets/banner.png" alt="LangGraph Coding Agent Banner" />
+</p>
+
+<p align="center">
+  <b>A Multi-Agent AI Coding Assistant built with LangGraph, LangChain and DeepSeek.</b>
+</p>
+
+<p align="center">
+  An intelligent coding workflow that enables requirement analysis, architecture design, code generation, review and automatic repair through collaborative AI Agents.
+</p>
+
+
+<p align="center">
+
+<img src="https://img.shields.io/badge/Python-3.10+-blue">
+
+<img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange">
+
+<img src="https://img.shields.io/badge/LangChain-LLM-green">
+
+<img src="https://img.shields.io/badge/DeepSeek-LLM-purple">
+
+<img src="https://img.shields.io/badge/Version-v0.1.0-success">
+
+<img src="https://img.shields.io/badge/License-MIT-lightgrey">
+
+</p>
+
+
+---
+
+# Overview
+
+
+**LangGraph Coding Agent** is a Multi-Agent AI Coding Assistant framework based on:
+
+- LangGraph
+- LangChain
+- DeepSeek LLM
+- Python
+
+
+The project explores how Large Language Models can collaborate through Agent Workflow to automate parts of the software engineering process.
+
+
+The current version implements a complete AI coding pipeline:
+
+```
+Requirement Understanding
+
+        ↓
+
+Architecture Design
+
+        ↓
+
+File Planning
+
+        ↓
+
+Multi-file Code Generation
+
+        ↓
+
+Code Checking
+
+        ↓
+
+Code Review
+
+        ↓
+
+Automatic Repair Loop
+```
+
+
+The goal is to build an enterprise-oriented AI software engineering assistant capable of assisting developers during the entire coding lifecycle.
 
 
 
-基于 \*\*LangGraph + LangChain + DeepSeek\*\* 构建的 Multi-Agent AI Coding Assistant。
+---
+
+# Features
+
+
+## Multi-Agent Architecture
+
+
+The system is composed of multiple specialized Agents:
+
+
+| Agent | Responsibility |
+|---|---|
+| Coordinator Agent | Analyze requirements and create task workflow |
+| Architecture Agent | Design system architecture |
+| Architecture Validator | Validate generated architecture |
+| File Planner Agent | Plan required source files |
+| Coder Agent | Generate multi-file source code |
+| Code Checker Agent | Perform code validation |
+| Reviewer Agent | Review generated code quality |
+| Repair Agent | Fix issues according to review feedback |
+
+
+Each Agent focuses on a specific responsibility, improving workflow maintainability and scalability.
 
 
 
-该项目探索 AI Agent 在软件工程自动化开发中的应用，实现从需求理解、架构设计、代码生成、代码检查、代码审查到自动修复的完整闭环。
+---
+
+# System Architecture
 
 
+```mermaid
+flowchart TD
 
-\---
+A[User Requirement]
 
+A --> B[Coordinator Agent]
 
+B --> C[Architecture Agent]
 
-\# Features
+C --> D[Architecture Validator]
 
+D --> E[File Planner Agent]
 
+E --> F[Coder Agent]
 
-\## Multi-Agent Workflow
+F --> G[Code Checker Agent]
 
+G --> H[Reviewer Agent]
 
+H --> I{Review Result}
 
-项目采用多 Agent 协作架构：
+I -->|Pass| J[Finish]
 
+I -->|Need Fix| K[Repair Agent]
 
-
-\- Coordinator Agent
-
-\- Architecture Agent
-
-\- File Planner Agent
-
-\- Coder Agent
-
-\- Code Checker Agent
-
-\- Reviewer Agent
-
-\- Repair Agent
-
-
-
-
-
-\## Automated Coding Pipeline
-
-
-
-支持：
-
-
-
-\- 用户需求分析
-
-\- 系统架构设计
-
-\- 文件规划
-
-\- 多文件代码生成
-
-\- 代码质量检查
-
-\- AI代码审查
-
-\- 自动修复
-
-
-
-
-
-\## Repair Loop
-
-
-
-当 Reviewer 发现问题：
-
-
+K --> G
 
 ```
 
+
+
+---
+
+# Workflow
+
+## Workflow Architecture
+
+<p align="center">
+  <img src="./assets/workflow.png" alt="Workflow Architecture" width="900"/>
+</p>
+
+
+The complete execution workflow:
+
+
+```mermaid
+flowchart TD
+
+A[User Query]
+
+-->
+
+B[Coordinator]
+
+-->
+
+C[Architecture]
+
+-->
+
+D[File Planner]
+
+-->
+
+E[Coder]
+
+-->
+
+F[Code Checker]
+
+-->
+
+G[Reviewer]
+
+
+G --> H{Score >= 90}
+
+H -->|Yes| I[Completed]
+
+H -->|No| J[Repair]
+
+
+J --> E
+
+```
+
+
+
+The workflow supports iterative improvement through:
+
+```
 Reviewer
 
-
-
-&#x20;   ↓
-
-
-
-Review Router
-
-
-
-&#x20;   ↓
-
-
+    ↓
 
 Repair Agent
 
-
-
-&#x20;   ↓
-
-
+    ↓
 
 Code Checker
 
-
-
-&#x20;   ↓
-
-
+    ↓
 
 Reviewer
 
 ```
 
 
-
-自动进入修复流程。
-
+This creates a closed-loop AI coding process.
 
 
 
+---
 
-\---
-
-
-
-\# System Architecture
-
-
-
+# Project Structure
 
 
 ```
-
-User Request
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-Coordinator Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-Architecture Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-File Planner Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-Coder Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-Code Checker Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     v
-
-
-
-Reviewer Agent
-
-
-
-&#x20;     |
-
-
-
-&#x20;     +------------+
-
-
-
-&#x20;     |            |
-
-
-
-&#x20;   Pass       Repair
-
-
-
-&#x20;                 |
-
-
-
-&#x20;                 v
-
-
-
-&#x20;            Code Checker
-
-```
-
-
-
-
-
-\---
-
-
-
-\# Tech Stack
-
-
-
-
-
-| Technology | Purpose |
-
-|-|-|
-
-| Python | Backend Language |
-
-| LangGraph | Agent Workflow |
-
-| LangChain | LLM Framework |
-
-| DeepSeek | Large Language Model |
-
-| FAISS | Vector Retrieval |
-
-| Pydantic | State Management |
-
-
-
-
-
-\---
-
-
-
-\# Project Structure
-
-
-
-
-
-```
-
 LangGraph-Coding-Agent
 
-
+│
 
 ├── agents
 
-│   ├── coordinator.py
-
 │   ├── architecture.py
 
-│   ├── file\_planner.py
+│   ├── architecture_validator.py
+
+│   ├── coordinator.py
+
+│   ├── file_planner.py
 
 │   ├── coder.py
 
-│   ├── code\_checker.py
+│   ├── code_checker.py
 
 │   ├── reviewer.py
 
@@ -314,7 +260,9 @@ LangGraph-Coding-Agent
 
 │   ├── router.py
 
-│   └── review\_router.py
+│   ├── review_router.py
+
+│   └── task.py
 
 │
 
@@ -336,59 +284,103 @@ LangGraph-Coding-Agent
 
 │
 
-└── rag
+├── rag
+
+│
+
+├── utils
+
+│
+
+├── main.py
+
+│
+
+├── requirements.txt
+
+│
+
+└── README.md
 
 ```
 
 
 
+---
+
+# Tech Stack
 
 
-\---
-
-
-
-\# Example
-
-
-
-
-
-Input:
-
-
-
-```
-
-设计一个Unity背包系统并生成代码
-
-```
+| Technology | Purpose |
+|-|-|
+| Python | Core Development Language |
+| LangGraph | Agent Workflow Orchestration |
+| LangChain | LLM Application Framework |
+| DeepSeek | Large Language Model |
+| Pydantic | State Management |
+| FAISS | Vector Retrieval (RAG Extension) |
+| Sentence Transformers | Embedding Model Support |
 
 
 
+---
+
+# Example
 
 
-Agent 自动生成：
-
+## User Input
 
 
 ```
+设计一个 Unity 背包系统并生成代码
+```
 
+
+
+## Agent Workflow
+
+
+```
+Coordinator
+
+↓
+
+Architecture
+
+↓
+
+File Planner
+
+↓
+
+Coder
+
+↓
+
+Code Checker
+
+↓
+
+Reviewer
+
+```
+
+
+
+## Generated Files
+
+
+Example output:
+
+
+```
 InventoryData.cs
-
-
 
 InventoryManager.cs
 
-
-
 InventoryController.cs
 
-
-
 InventoryView.cs
-
-
 
 InventoryEvents.cs
 
@@ -396,171 +388,232 @@ InventoryEvents.cs
 
 
 
+The system automatically:
 
-
-\---
-
-
-
-\# Installation
-
-
-
-
-
-\## Clone
+1. Understands the requirement
+2. Designs architecture
+3. Plans source files
+4. Generates code
+5. Reviews generated code
+6. Repairs detected problems
 
 
 
+---
+
+# Installation
+
+
+## Clone Repository
 
 
 ```bash
-
 git clone https://github.com/MaddieMo1/LangGraph-Coding-Agent.git
 
+cd LangGraph-Coding-Agent
 ```
 
 
+---
 
-
-
-\## Install
-
-
-
+## Install Dependencies
 
 
 ```bash
-
 pip install -r requirements.txt
-
 ```
 
 
 
+---
+
+# Configuration
 
 
-\## Configuration
+Create environment configuration:
 
 
-
-
-
-复制：
-
+Copy:
 
 
 ```
-
 .env.example
-
 ```
 
 
-
-修改：
-
+Rename:
 
 
 ```
-
 .env
+```
 
+
+Configure:
+
+
+```env
+DEEPSEEK_API_KEY=your_api_key_here
+
+DEEPSEEK_MODEL=deepseek-chat
 ```
 
 
 
+---
+
+# Run
 
 
-填写：
-
-
-
-```
-
-DEEPSEEK\_API\_KEY
-
+```bash
+python main.py
 ```
 
 
 
+---
+
+# Development
 
 
-\---
+## Add New Agent
+
+
+Create:
+
+
+```
+agents/new_agent.py
+```
+
+
+Implement:
+
+
+```python
+class NewAgent:
+
+    def run(self,state):
+
+        return state
+```
+
+
+Then register the Agent inside:
+
+
+```
+workflow/graph.py
+```
+
+## Demo Result
+
+### Multi-Agent Workflow Execution
+
+The following screenshot shows the end-to-end execution of the LangGraph-based multi-agent workflow:
+
+<p align="center">
+  <img src="./assets/demo_workflow_log.png" alt="Workflow Execution Log" width="900"/>
+</p>
+
+
+### Automatic Repair Loop
+
+The system supports automatic repair when issues are detected during review:
+
+<p align="center">
+  <img src="./assets/demo_repair_log.png" alt="Repair Loop Log" width="900"/>
+</p>
+
+
+### Generated Code Example
+
+Example generated files for a Unity system request:
+
+<p align="center">
+  <img src="./assets/demo_generated_files.png" alt="Generated Files" width="900"/>
+</p>
+
+---
+
+# Roadmap
+
+
+## v0.1.0
+
+Completed:
+
+
+- Multi-Agent Workflow
+- LangGraph State Management
+- Architecture Planning
+- Multi-file Code Generation
+- Code Review
+- Repair Loop
+
+
+---
+
+## v0.2.0
+
+
+Planned:
+
+
+- Real Compiler Based Code Checking
+- Structured Compiler Error Parsing
+- Better Code Validation
+
+
+---
+
+## v0.3.0
+
+
+Planned:
+
+
+- RAG Knowledge Retrieval
+- Unity API Knowledge Base
+- Project Code Understanding
+
+
+---
+
+## v0.4.0
+
+
+Planned:
+
+
+- Long-term Memory
+- Human Approval Workflow
+- Sandbox Execution Environment
 
 
 
-\# Roadmap
+---
+
+# Contribution
+
+
+Contributions are welcome.
+
+Please read:
+
+```
+CONTRIBUTING.md
+```
+
+
+before submitting Pull Requests.
 
 
 
+---
+
+# License
 
 
-\## v0.1.0
-
-
-
-完成：
-
-
-
-\- Multi-Agent Workflow
-
-\- LangGraph State Management
-
-\- Code Generation
-
-\- Code Review
-
-\- Automatic Repair Loop
-
-
-
-
-
-\## v0.2.0
-
-
-
-计划：
-
-
-
-\- Real Compiler Code Check
-
-\- Unity API Knowledge Base
-
-\- RAG Code Retrieval
-
-
-
-
-
-\## v0.3.0
-
-
-
-计划：
-
-
-
-\- Code Execution Sandbox
-
-\- Human Approval Workflow
-
-\- Long-term Memory
-
-
-
-
-
-\---
-
-
-
-\# License
-
-
-
-MIT License
+This project is licensed under the MIT License.
 
