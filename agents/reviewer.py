@@ -1,44 +1,42 @@
 # =========================
 # Reviewer Agent
-# 代码审查Agent
 # =========================
-
 import json
 import re
-
-from llm.deepseek import DeepSeekLLM
 
 from prompts.reviewer_prompt import get_reviewer_prompt
 
 
 class ReviewerAgent:
     """
-    Reviewer Agent核心处理类
+    Reviewer Agent
 
     负责:
-    1.读取生成代码
-    2.结合Code Checker结果
-    3.执行代码质量审查
-    4.生成修复建议
-    5.保证Review结果结构稳定
+    1. 分析代码质量
+    2. 分析Unity编译错误
+    3. 提取Root Cause
+    4. 生成修复建议
     """
-
 
     def __init__(self, llm):
         """
         初始化Reviewer Agent
+
+        Args:
+            llm:
+                大语言模型实例
         """
 
         self.llm = llm
 
 
-    def run(self,state):
+    def run(self, state):
         """
-        执行代码审查
+        执行代码审核
 
         Args:
             state:
-                Agent共享状态
+                LangGraph共享状态
 
         Returns:
             Reviewer结果
@@ -52,21 +50,13 @@ class ReviewerAgent:
             []
         )
 
-
-        repair_history = state.get(
-            "repair_history",
-            []
-        )
-
-
-        review_history = state.get(
-            "review_history",
-            []
-        )
-
-
         code_check_result = state.get(
             "code_check_result",
+            {}
+        )
+
+        compile_result = state.get(
+            "compile_result",
             {}
         )
 
@@ -74,53 +64,326 @@ class ReviewerAgent:
         prompt = get_reviewer_prompt(
             code,
             code_check_result,
+            compile_result,
             state.get(
                 "architecture",
                 ""
             ),
-            repair_history
+            state.get(
+                "repair_history",
+                []
+            )
         )
 
 
         result = self.llm.invoke(
             prompt
         )
-        
-        if hasattr(result,"content"):
 
-            result = result.content
-        
-        
-        print(
-            "[Reviewer Raw Output]"
+
+        content = (
+            result.content
+            if hasattr(
+                result,
+                "content"
+            )
+            else str(result)
         )
-        
-        print(
-            result
-        )
-        
-        
+
+
+        print("[Reviewer Raw Output]")
+        print(content)
+
+
         review = self.parse_review(
-            result
+            content
         )
 
-        review_history.append(
-            {
-                "round":
-                len(review_history)+1,
 
-                "score":
-                review.get(
-                    "score",
-                    0
-                ),
+        # 提取Root Cause
+        root_causes = self.normalize_root_causes(
+            self.extract_root_causes(
+                review
+            )
+        )
 
-                "status":
-                review.get(
-                    "review_status",
-                    "success"
+
+        if compile_result and not compile_result.get(
+            "success",
+            True
+        ):
+
+            compiler_errors = [
+                error
+                for error in compile_result.get(
+                    "errors",
+                    []
                 )
+                if isinstance(
+                    error,
+                    dict
+                )
+                and
+                error.get(
+                    "code"
+                )
+                !=
+                "SYSTEM_ERROR"
+            ]
+
+
+            compiler_codes = {
+                error.get(
+                    "code",
+                    ""
+                )
+                for error in compiler_errors
             }
+
+
+            compiler_files = {
+                error.get(
+                    "file",
+                    ""
+                ).replace(
+                    "\\",
+                    "/"
+                ).split(
+                    "/"
+                )[-1]
+                for error in compiler_errors
+            }
+
+
+            filtered_root_causes = []
+
+
+            for root in root_causes:
+
+                root_files = [
+                    root.get(
+                        "source_file",
+                        ""
+                    ),
+                    root.get(
+                        "target_file",
+                        ""
+                    ),
+                    root.get(
+                        "fix_action",
+                        {}
+                    ).get(
+                        "target",
+                        ""
+                    )
+                ]
+
+
+                root_files = {
+                    file_name.replace(
+                        "\\",
+                        "/"
+                    ).split(
+                        "/"
+                    )[-1]
+                    for file_name in root_files
+                    if file_name
+                }
+
+
+                if (
+                    root.get(
+                        "error_code",
+                        ""
+                    )
+                    in
+                    compiler_codes
+                    and
+                    root_files.intersection(
+                        compiler_files
+                    )
+                ):
+
+                    filtered_root_causes.append(
+                        root
+                    )
+
+
+            root_causes = filtered_root_causes
+
+
+            if not root_causes and compiler_errors:
+
+                errors_by_file = {}
+
+
+                for error in compiler_errors:
+
+                    file_name = error.get(
+                        "file",
+                        "unknown"
+                    ).replace(
+                        "\\",
+                        "/"
+                    ).split(
+                        "/"
+                    )[-1]
+
+
+                    errors_by_file.setdefault(
+                        file_name,
+                        []
+                    ).append(
+                        error
+                    )
+
+
+                for index,(
+                    file_name,
+                    file_errors
+                ) in enumerate(
+                    errors_by_file.items()
+                ):
+
+                    details = "\n".join(
+                        f"{error.get('code', '')}:"
+                        f"{error.get('message', '')}"
+                        for error in file_errors
+                    )
+
+
+                    root_causes.append(
+                        {
+                            "id": index + 1,
+                            "type": "compile_error",
+                            "symbol": "",
+                            "source_file": file_name,
+                            "target_file": file_name,
+                            "affected_methods": [],
+                            "error_code": file_errors[0].get(
+                                "code",
+                                ""
+                            ),
+                            "fix_action": {
+                                "operation": "repair_compile_errors",
+                                "target": file_name,
+                                "details": details
+                            },
+                            "fix_strategy": details,
+                            "description": details
+                        }
+                    )
+
+
+                review["remaining_issues"] = [
+                    {
+                        "file": error.get(
+                            "file",
+                            "unknown"
+                        ),
+                        "related_files": [],
+                        "method": "unknown",
+                        "problem": (
+                            f"{error.get('code', '')}:"
+                            f"{error.get('message', '')}"
+                        ),
+                        "suggestion": "修复Unity编译错误",
+                        "severity": "critical"
+                    }
+                    for error in compiler_errors
+                ]
+
+
+            review["root_causes"] = root_causes
+
+
+        elif compile_result.get(
+            "success",
+            False
+        ):
+
+            def is_compiler_claim(item):
+
+                return (
+                    item.get(
+                        "type",
+                        ""
+                    )
+                    ==
+                    "compile_error"
+                    or
+                    str(
+                        item.get(
+                            "error_code",
+                            ""
+                        )
+                    ).startswith(
+                        "CS"
+                    )
+                )
+
+
+            root_causes = [
+                root
+                for root in root_causes
+                if not is_compiler_claim(
+                    root
+                )
+            ]
+
+
+            review["root_causes"] = root_causes
+            review["remaining_issues"] = [
+                issue
+                for issue in review.get(
+                    "remaining_issues",
+                    []
+                )
+                if not is_compiler_claim(
+                    issue
+                )
+            ]
+
+
+        # Unity Compiler错误校验
+        review = self.validate_compile_result(
+            review,
+            compile_result,
+            root_causes
+        )
+
+
+        invalid_review = any(
+            issue.get(
+                "file",
+                ""
+            )
+            in [
+                "",
+                "unknown",
+                "Unknown"
+            ]
+            and
+            "Reviewer" in issue.get(
+                "problem",
+                ""
+            )
+            for issue in review.get(
+                "remaining_issues",
+                []
+            )
+        )
+
+
+        review_retry_count = (
+            state.get(
+                "review_retry_count",
+                0
+            )
+            +
+            1
+            if invalid_review
+            else 0
         )
 
 
@@ -136,27 +399,28 @@ class ReviewerAgent:
 
         return {
 
-            "current_agent":
-            "reviewer",
-        
-        
             "review":
             review,
-        
-        
+
+            "root_causes":
+            root_causes,
+
             "review_history":
-            review_history,
-        
-        
-            "review_retry_count":
             state.get(
-                "review_retry_count",
-                0
+                "review_history",
+                []
             )
             +
-            1,
-        
-        
+            [
+                review
+            ],
+
+            "review_retry_count":
+            review_retry_count,
+
+            "current_agent":
+            "reviewer",
+
             "agent_history":
             state.get(
                 "agent_history",
@@ -166,195 +430,465 @@ class ReviewerAgent:
             [
                 "Reviewer Agent完成"
             ]
-        
         }
 
 
-    def parse_review(self,result):
+    def parse_review(self, content):
         """
-        解析Reviewer输出
+        解析LLM返回JSON
 
         Args:
-            result:
-                LLM返回文本
+            content:
+                模型输出文本
 
         Returns:
-            Review JSON结果
-        """
-
-
-        json_text = self.extract_json(
-            result
-        )
-
-
-        review = self.try_parse_json(
-            json_text
-        )
-
-
-        if review:
-
-            return self.normalize_review(
-                review
-            )
-
-
-        print(
-            "[Reviewer Agent]JSON解析失败，跳过修复"
-        )
-
-
-        return {
-
-            "review_status":
-            "invalid",
-
-
-            "retry":
-            True,
-
-
-            "score":
-            0,
-
-
-            "pass":
-            False,
-
-
-            "fixed_issues":
-            [],
-
-
-            "remaining_issues":
-            []
-
-        }
-
-
-    def try_parse_json(self,text):
-        """
-        尝试解析JSON
-
-        Args:
-            text:
-                JSON文本
-
-        Returns:
-            dict或者None
+            Reviewer JSON
         """
 
         try:
 
-            return json.loads(
-                text
+            match = re.search(
+                r"\{.*\}",
+                content,
+                re.S
             )
+
+
+            if match:
+
+                return json.loads(
+                    match.group()
+                )
+
 
         except Exception:
 
             pass
 
 
-        # 修复尾逗号
+        return {
 
-        try:
+            "score":
+            50,
 
-            fixed = re.sub(
-                r",\s*([\]}])",
-                r"\1",
-                text
-            )
+            "pass":
+            False,
 
+            "fixed_issues":[],
 
-            return json.loads(
-                fixed
-            )
+            "root_causes":[],
 
+            "remaining_issues":[
 
-        except Exception:
+                {
+                    "file":
+                    "unknown",
 
-            return None
+                    "related_files":[],
 
+                    "method":
+                    "review",
 
-    def extract_json(self,text):
-        """
-        提取JSON内容
+                    "problem":
+                    "Reviewer输出格式错误",
 
-        Args:
-            text:
-                模型输出
+                    "suggestion":
+                    "重新生成JSON",
 
-        Returns:
-            JSON字符串
-        """
+                    "severity":
+                    "medium"
+                }
 
-
-        text = text.replace(
-            "```json",
-            ""
-        )
-
-
-        text = text.replace(
-            "```",
-            ""
-        )
-
-
-        start = text.find(
-            "{"
-        )
-
-
-        end = text.rfind(
-            "}"
-        )
-
-
-        if start != -1 and end != -1:
-
-            return text[
-                start:end+1
             ]
+        }
 
 
-        return text
-
-
-    def normalize_review(self,review):
+    def extract_root_causes(self, review):
         """
-        标准化Review结果
+        提取Root Cause分析结果
 
         Args:
             review:
-                Review数据
+                Reviewer结果
 
         Returns:
-            标准结构
+            根因列表
         """
 
-        if "score" not in review:
-
-            review["score"] = 50
-
-
-        if "fixed_issues" not in review:
-
-            review["fixed_issues"] = []
+        root_causes = review.get(
+            "root_causes",
+            []
+        )
 
 
-        if "remaining_issues" not in review:
+        if not isinstance(
+            root_causes,
+            list
+        ):
+            return []
 
-            review["remaining_issues"] = []
+
+        return root_causes
 
 
-        review["review_status"] = "success"
+    def validate_compile_result(
+        self,
+        review,
+        compile_result,
+        root_causes=None
+    ):
+        """
+        校验Unity Compiler结果
+
+        功能:
+        1. Unity编译失败强制审核失败
+        2. 根据Root Cause过滤重复问题
+        3. 自动合并Compiler错误
+        4. 保持remaining_issues兼容
+
+        Args:
+            review:
+                Reviewer结果
+
+            compile_result:
+                Unity编译结果
+
+            root_causes:
+                Reviewer根因分析结果
+
+        Returns:
+            修正后的Reviewer结果
+        """
+
+        if not compile_result:
+            return review
 
 
-        if review["remaining_issues"]:
+        if compile_result.get(
+            "success",
+            True
+        ):
+            return review
 
-            review["pass"] = False
+
+        errors = compile_result.get(
+            "errors",
+            []
+        )
+
+
+        # =========================
+        # Unity Compiler优先级最高
+        # =========================
+
+        review["pass"] = False
+
+
+        if review.get(
+            "score",
+            100
+        ) > 80:
+
+            review["score"] = 80
+
+
+        # =========================
+        # Root Cause优先
+        # 存在根因时清理重复问题
+        # 不再追加Compiler错误
+        # =========================
+
+        if root_causes:
+
+            filtered = []
+
+
+            for issue in review.get(
+                "remaining_issues",
+                []
+            ):
+
+                issue_text = json.dumps(
+                    issue,
+                    ensure_ascii=False
+                )
+
+
+                duplicated = False
+
+
+                for root in root_causes:
+
+                    root_file = root.get(
+                        "file",
+                        ""
+                    )
+
+                    symbol = root.get(
+                        "symbol",
+                        ""
+                    )
+
+
+                    if (
+                        root_file
+                        and
+                        root_file in issue_text
+                        and
+                        symbol
+                        and
+                        symbol in issue_text
+                    ):
+
+                        duplicated = True
+
+                        break
+
+
+                    # 处理中文错误:
+                    # 找不到类型或命名空间名称 ItemData
+
+                    if (
+                        symbol
+                        and
+                        symbol in issue_text
+                    ):
+
+                        duplicated = True
+
+                        break
+
+
+                if not duplicated:
+
+                    filtered.append(
+                        issue
+                    )
+
+
+            review["remaining_issues"] = filtered
+
+
+            print(
+                "[Reviewer]Root Cause模式，过滤Compiler重复问题"
+            )
+
+
+            return review
+
+
+        # =========================
+        # 无Root Cause时
+        # 兼容旧逻辑
+        # =========================
+
+        issues = review.get(
+            "remaining_issues",
+            []
+        )
+
+
+        existing = set()
+
+
+        for item in issues:
+
+            existing.add(
+                (
+                    item.get(
+                        "file",
+                        ""
+                    ),
+
+                    item.get(
+                        "problem",
+                        ""
+                    )
+                )
+            )
+
+
+        for error in errors:
+
+            if isinstance(
+                error,
+                str
+            ):
+
+                key = (
+                    "unknown",
+                    error
+                )
+
+
+                if key in existing:
+                    continue
+
+
+                issues.append(
+                    {
+                        "file":
+                        "unknown",
+
+                        "related_files":
+                        [],
+
+                        "method":
+                        "unknown",
+
+                        "problem":
+                        error,
+
+                        "suggestion":
+                        "修复Unity编译错误",
+
+                        "severity":
+                        "critical"
+                    }
+                )
+
+                continue
+
+
+            file = error.get(
+                "file",
+                "unknown"
+            )
+
+
+            code = error.get(
+                "code",
+                ""
+            )
+
+
+            message = error.get(
+                "message",
+                ""
+            )
+
+
+            problem = (
+                f"{code}:{message}"
+            )
+
+
+            key = (
+                file,
+                problem
+            )
+
+
+            if key in existing:
+                continue
+
+
+            issues.append(
+                {
+                    "file":
+                    file,
+
+                    "related_files":
+                    [],
+
+                    "method":
+                    "unknown",
+
+                    "problem":
+                    problem,
+
+                    "suggestion":
+                    "修复Unity编译错误",
+
+                    "severity":
+                    "critical"
+                }
+            )
+
+
+        review["remaining_issues"] = issues
 
 
         return review
+
+    def normalize_root_causes(
+        self,
+        root_causes
+    ):
+        """
+        标准化Root Cause结构
+
+        保证Repair Agent可以稳定消费
+        """
+
+        result=[]
+
+
+        for index,item in enumerate(root_causes):
+
+            result.append(
+                {
+                    "id":
+                    item.get(
+                        "id",
+                        index + 1
+                    ),
+
+                    "type":
+                    item.get(
+                        "type",
+                        "unknown"
+                    ),
+
+                    "symbol":
+                    item.get(
+                        "symbol",
+                        ""
+                    ),
+
+                    "source_file":
+                    item.get(
+                        "source_file",
+                        item.get(
+                            "related_file",
+                            ""
+                        )
+                    ),
+
+                    "target_file":
+                    item.get(
+                        "target_file",
+                        item.get(
+                            "file",
+                            ""
+                        )
+                    ),
+
+                    "affected_methods":
+                    item.get(
+                        "affected_methods",
+                        []
+                    ),
+
+                    "error_code":
+                    item.get(
+                        "error_code",
+                        ""
+                    ),
+
+                    "fix_action":
+                    item.get(
+                        "fix_action",
+                        {}
+                    ),
+
+                    "description":
+                    item.get(
+                        "description",
+                        ""
+                    )
+                }
+            )
+
+
+        return result

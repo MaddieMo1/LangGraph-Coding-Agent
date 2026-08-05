@@ -1,619 +1,208 @@
 # LangGraph Coding Agent
+
 <p align="center">
   <img src="./assets/banner.png" alt="LangGraph Coding Agent Banner" />
 </p>
 
 <p align="center">
-  <b>A Multi-Agent AI Coding Assistant built with LangGraph, LangChain and DeepSeek.</b>
+  <b>A multi-agent coding workflow built with LangGraph, LangChain, DeepSeek, and the Unity compiler.</b>
 </p>
 
 <p align="center">
-  An intelligent coding workflow that enables requirement analysis, architecture design, code generation, review and automatic repair through collaborative AI Agents.
+  <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
+  <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
+  <img src="https://img.shields.io/badge/Version-v0.2.0-success" alt="Version v0.2.0">
+  <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT License">
 </p>
 
+## Overview
 
-<p align="center">
+LangGraph Coding Agent explores how specialized AI agents can collaborate on a software-engineering workflow. The current version can analyze a requirement, design an architecture, generate multiple files, perform static checks, compile generated Unity C# code, review compiler evidence, and repair failures in a bounded loop.
 
-<img src="https://img.shields.io/badge/Python-3.10+-blue">
-
-<img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange">
-
-<img src="https://img.shields.io/badge/LangChain-LLM-green">
-
-<img src="https://img.shields.io/badge/DeepSeek-LLM-purple">
-
-<img src="https://img.shields.io/badge/Version-v0.1.0-success">
-
-<img src="https://img.shields.io/badge/License-MIT-lightgrey">
-
-</p>
-
-
----
-
-# Overview
-
-
-**LangGraph Coding Agent** is a Multi-Agent AI Coding Assistant framework based on:
-
-- LangGraph
-- LangChain
-- DeepSeek LLM
-- Python
-
-
-The project explores how Large Language Models can collaborate through Agent Workflow to automate parts of the software engineering process.
-
-
-The current version implements a complete AI coding pipeline:
-
-```
-Requirement Understanding
-
-        ↓
-
-Architecture Design
-
-        ↓
-
-File Planning
-
-        ↓
-
-Multi-file Code Generation
-
-        ↓
-
-Code Checking
-
-        ↓
-
-Code Review
-
-        ↓
-
-Automatic Repair Loop
+```text
+Requirement → Architecture → File Plan → Code Generation
+                                      ↓
+Finish ← Reviewer ← Unity Compiler ← Code Checker
+             ↓              ↑
+           Repair ──────────┘
 ```
 
+## Day06-4 capabilities
 
-The goal is to build an enterprise-oriented AI software engineering assistant capable of assisting developers during the entire coding lifecycle.
+- Real Unity BatchMode compilation in an isolated test project.
+- Structured parsing and deduplication of C# compiler errors.
+- `compile_history`, `review_history`, and `repair_history` state tracking.
+- Reviewer JSON retry control through `review_retry_count`.
+- Compiler evidence takes priority over model-generated compiler claims.
+- System/environment errors terminate the repair loop instead of being treated as code defects.
+- Strict completion requires all of the following:
+  - Code Checker succeeds.
+  - Unity compilation succeeds.
+  - Reviewer score is at least 90.
+  - Reviewer returns `pass=true`.
+  - `remaining_issues` is empty.
+- Verified repair route:
 
+```text
+Compile failure
+→ Reviewer root cause
+→ Repair Agent
+→ Code Checker
+→ Unity Compiler
+→ Reviewer pass
+→ finish_task
+```
 
-
----
-
-# Features
-
-
-## Multi-Agent Architecture
-
-
-The system is composed of multiple specialized Agents:
-
+## Agents
 
 | Agent | Responsibility |
 |---|---|
-| Coordinator Agent | Analyze requirements and create task workflow |
-| Architecture Agent | Design system architecture |
-| Architecture Validator | Validate generated architecture |
-| File Planner Agent | Plan required source files |
-| Coder Agent | Generate multi-file source code |
-| Code Checker Agent | Perform code validation |
-| Reviewer Agent | Review generated code quality |
-| Repair Agent | Fix issues according to review feedback |
+| Coordinator | Understand the request and prepare the workflow |
+| Architecture | Design the target system |
+| Architecture Validator | Validate architecture output |
+| File Planner | Plan generated source files |
+| Coder | Generate multi-file code |
+| Code Checker | Perform static project checks |
+| Unity Compiler | Synchronize and compile generated C# files |
+| Reviewer | Combine code, checker, and compiler evidence |
+| Repair | Repair files from structured root causes |
 
-
-Each Agent focuses on a specific responsibility, improving workflow maintainability and scalability.
-
-
-
----
-
-# System Architecture
-
+## Workflow
 
 ```mermaid
 flowchart TD
-
-A[User Requirement]
-
-A --> B[Coordinator Agent]
-
-B --> C[Architecture Agent]
-
-C --> D[Architecture Validator]
-
-D --> E[File Planner Agent]
-
-E --> F[Coder Agent]
-
-F --> G[Code Checker Agent]
-
-G --> H[Reviewer Agent]
-
-H --> I{Review Result}
-
-I -->|Pass| J[Finish]
-
-I -->|Need Fix| K[Repair Agent]
-
-K --> G
-
+    A[User Request] --> B[Coordinator]
+    B --> C[Architecture]
+    C --> D[Architecture Validator]
+    D --> E[File Planner]
+    E --> F[Coder]
+    F --> G[Code Checker]
+    G --> H[Unity Compiler]
+    H -->|System error| Z[Finish with failure]
+    H -->|Compiler result| I[Reviewer]
+    I -->|Strict pass| J[finish_task]
+    I -->|Compile or code issue| K[Repair]
+    I -->|Architecture issue| C
+    K --> G
 ```
 
+The repair loop is bounded. Reaching the retry limit terminates execution without falsely reporting success.
 
+## Project structure
 
----
-
-# Workflow
-
-## Workflow Architecture
-
-<p align="center">
-  <img src="./assets/workflow.png" alt="Workflow Architecture" width="900"/>
-</p>
-
-
-The complete execution workflow:
-
-
-```mermaid
-flowchart TD
-
-A[User Query]
-
--->
-
-B[Coordinator]
-
--->
-
-C[Architecture]
-
--->
-
-D[File Planner]
-
--->
-
-E[Coder]
-
--->
-
-F[Code Checker]
-
--->
-
-G[Reviewer]
-
-
-G --> H{Score >= 90}
-
-H -->|Yes| I[Completed]
-
-H -->|No| J[Repair]
-
-
-J --> E
-
-```
-
-
-
-The workflow supports iterative improvement through:
-
-```
-Reviewer
-
-    ↓
-
-Repair Agent
-
-    ↓
-
-Code Checker
-
-    ↓
-
-Reviewer
-
-```
-
-
-This creates a closed-loop AI coding process.
-
-
-
----
-
-# Project Structure
-
-
-```
-LangGraph-Coding-Agent
-
-│
-
-├── agents
-
+```text
+LangGraph-Coding-Agent/
+├── agents/
 │   ├── architecture.py
-
 │   ├── architecture_validator.py
-
-│   ├── coordinator.py
-
-│   ├── file_planner.py
-
-│   ├── coder.py
-
 │   ├── code_checker.py
-
+│   ├── coder.py
+│   ├── coordinator.py
+│   ├── file_planner.py
+│   ├── repair.py
 │   ├── reviewer.py
-
-│   └── repair.py
-
-│
-
-├── workflow
-
-│   ├── graph.py
-
-│   ├── router.py
-
-│   ├── review_router.py
-
-│   └── task.py
-
-│
-
-├── memory
-
+│   └── unity_compiler.py
+├── memory/
 │   └── state.py
-
-│
-
-├── tools
-
-│
-
-├── prompts
-
-│
-
-├── llm
-
-│
-
-├── rag
-
-│
-
-├── utils
-
-│
-
+├── prompts/
+│   ├── repair_prompt.py
+│   └── reviewer_prompt.py
+├── tools/
+│   ├── code_check_tool.py
+│   ├── file_manager.py
+│   └── unity_compile_tool.py
+├── workflow/
+│   ├── graph.py
+│   ├── review_router.py
+│   ├── router.py
+│   └── task.py
 ├── main.py
-
-│
-
 ├── requirements.txt
-
-│
-
-└── README.md
-
+├── CONTRIBUTING.md
+└── LICENSE
 ```
 
-
-
----
-
-# Tech Stack
-
-
-| Technology | Purpose |
-|-|-|
-| Python | Core Development Language |
-| LangGraph | Agent Workflow Orchestration |
-| LangChain | LLM Application Framework |
-| DeepSeek | Large Language Model |
-| Pydantic | State Management |
-| FAISS | Vector Retrieval (RAG Extension) |
-| Sentence Transformers | Embedding Model Support |
-
-
-
----
-
-# Example
-
-
-## User Input
-
-
-```
-设计一个 Unity 背包系统并生成代码
-```
-
-
-
-## Agent Workflow
-
-
-```
-Coordinator
-
-↓
-
-Architecture
-
-↓
-
-File Planner
-
-↓
-
-Coder
-
-↓
-
-Code Checker
-
-↓
-
-Reviewer
-
-```
-
-
-
-## Generated Files
-
-
-Example output:
-
-
-```
-InventoryData.cs
-
-InventoryManager.cs
-
-InventoryController.cs
-
-InventoryView.cs
-
-InventoryEvents.cs
-
-```
-
-
-
-The system automatically:
-
-1. Understands the requirement
-2. Designs architecture
-3. Plans source files
-4. Generates code
-5. Reviews generated code
-6. Repairs detected problems
-
-
-
----
-
-# Installation
-
-
-## Clone Repository
-
+## Installation
 
 ```bash
 git clone https://github.com/MaddieMo1/LangGraph-Coding-Agent.git
-
 cd LangGraph-Coding-Agent
-```
-
-
----
-
-## Install Dependencies
-
-
-```bash
 pip install -r requirements.txt
 ```
 
+## Configuration
 
-
----
-
-# Configuration
-
-
-Create environment configuration:
-
-
-Copy:
-
-
-```
-.env.example
-```
-
-
-Rename:
-
-
-```
-.env
-```
-
-
-Configure:
-
+Copy `.env.example` to `.env`, then configure DeepSeek and the local Unity test environment:
 
 ```env
 DEEPSEEK_API_KEY=your_api_key_here
-
 DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+
+UNITY_EDITOR_PATH=D:\Unity\Hub\Unity_Editor\2022.3.62f2c1\Editor\Unity.exe
+UNITY_TEST_PROJECT_PATH=D:\Unity\Unity_Project\CodingAgentTest
 ```
 
+The Unity project must contain valid `Assets/`, `Packages/`, and `ProjectSettings/` directories. Generated scripts are synchronized only into `Assets/Generated`.
 
-
----
-
-# Run
-
+## Run
 
 ```bash
 python main.py
 ```
 
+## Day06-4 acceptance test
 
+The verified acceptance scenario injects a temporary C# syntax error into a backed-up `generated` directory, then runs the real closed loop. A passing result must contain:
 
----
-
-# Development
-
-
-## Add New Agent
-
-
-Create:
-
-
-```
-agents/new_agent.py
+```text
+Round 1: Unity compile failed, system_error=false
+Repair: at least one successful file action
+Round 2+: Unity compile succeeded
+Reviewer: score>=90, pass=true, remaining_issues=[]
+Route: finish_task
+Cleanup: restored generated code compiles successfully
 ```
 
+Do not treat `finish_task` alone as success. Always inspect the compiler, checker, and reviewer fields together.
 
-Implement:
+## Roadmap
 
+### v0.1.0 — Completed
 
-```python
-class NewAgent:
+- Multi-agent workflow
+- Architecture and file planning
+- Multi-file generation
+- Reviewer and basic repair loop
 
-    def run(self,state):
+### v0.2.0 — Completed (Day06-4)
 
-        return state
-```
+- Compiler-level code checking
+- Real Unity BatchMode compilation
+- Structured compiler error parsing
+- Compile, review, and repair histories
+- Strict completion rules and bounded routing
+- Verified compile–repair–verify loop
 
+### v0.3.0 — Next (Day06-5)
 
-Then register the Agent inside:
+- Engineering-grade Repair Tool
+- Precise patch application instead of direct Agent file writes
+- Patch history and verification metadata
 
+### Later
 
-```
-workflow/graph.py
-```
+- Unity API knowledge retrieval
+- Project-level code understanding
+- Long-term memory
+- Human approval workflow
+- Isolated execution sandbox
 
-## Demo Result
+## Contributing
 
-### Multi-Agent Workflow Execution
+Contributions are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request.
 
-The following screenshot shows the end-to-end execution of the LangGraph-based multi-agent workflow:
+## License
 
-<p align="center">
-  <img src="./assets/demo_workflow_log.png" alt="Workflow Execution Log" width="900"/>
-</p>
-
-
-### Automatic Repair Loop
-
-The system supports automatic repair when issues are detected during review:
-
-<p align="center">
-  <img src="./assets/demo_repair_log.png" alt="Repair Loop Log" width="900"/>
-</p>
-
-
-### Generated Code Example
-
-Example generated files for a Unity system request:
-
-<p align="center">
-  <img src="./assets/demo_generated_files.png" alt="Generated Files" width="900"/>
-</p>
-
----
-
-# Roadmap
-
-
-## v0.1.0
-
-Completed:
-
-
-- Multi-Agent Workflow
-- LangGraph State Management
-- Architecture Planning
-- Multi-file Code Generation
-- Code Review
-- Repair Loop
-
-
----
-
-## v0.2.0
-
-
-Planned:
-
-
-- Real Compiler Based Code Checking
-- Structured Compiler Error Parsing
-- Better Code Validation
-
-
----
-
-## v0.3.0
-
-
-Planned:
-
-
-- RAG Knowledge Retrieval
-- Unity API Knowledge Base
-- Project Code Understanding
-
-
----
-
-## v0.4.0
-
-
-Planned:
-
-
-- Long-term Memory
-- Human Approval Workflow
-- Sandbox Execution Environment
-
-
-
----
-
-# Contribution
-
-
-Contributions are welcome.
-
-Please read:
-
-```
-CONTRIBUTING.md
-```
-
-
-before submitting Pull Requests.
-
-
-
----
-
-# License
-
-
-This project is licensed under the MIT License.
-
+This project is licensed under the [MIT License](./LICENSE).

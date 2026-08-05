@@ -4,6 +4,7 @@
 # =========================
 
 from tools.code_check_tool import CodeCheckTool
+from tools.file_manager import FileManager
 
 
 class CodeCheckerAgent:
@@ -24,6 +25,7 @@ class CodeCheckerAgent:
         """
 
         self.tool = CodeCheckTool()
+        self.file_manager = FileManager()
 
 
     def run(self,state):
@@ -44,6 +46,9 @@ class CodeCheckerAgent:
         result = self.tool.check_project(
             "generated"
         )
+
+
+        code = self.file_manager.read_generated_files()
 
 
         if result.get(
@@ -69,6 +74,10 @@ class CodeCheckerAgent:
 
             "code_check_result":
             result,
+
+
+            "code":
+            code,
 
 
             "agent_history":

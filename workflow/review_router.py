@@ -35,6 +35,27 @@ def review_router(state):
         []
     )
 
+    review_pass = review.get(
+        "pass",
+        False
+    )
+
+    code_check_success = state.get(
+        "code_check_result",
+        {}
+    ).get(
+        "success",
+        False
+    )
+
+    compile_success = state.get(
+        "compile_result",
+        {}
+    ).get(
+        "success",
+        False
+    )
+
     repair_count = state.get(
         "repair_count",
         0
@@ -102,6 +123,42 @@ def review_router(state):
         return "finish_task"
 
 
+    # Unity编译失败时，优先使用真实编译错误进入修复闭环。
+    # 架构关键词只用于编译通过后的代码评审，避免错误消息中的
+    # System/Manager 等普通符号误触发重新规划。
+    if (
+        state.get(
+            "compile_result",
+            {}
+        )
+        and
+        not compile_success
+        and
+        not state.get(
+            "compile_result",
+            {}
+        ).get(
+            "system_error",
+            False
+        )
+    ):
+
+        if repair_count < 3:
+
+            print(
+                "[Review Router]Unity编译失败，进入代码修复"
+            )
+
+            return "repair"
+
+
+        print(
+            "[Review Router]Unity编译失败且已达到最大修复次数"
+        )
+
+        return "finish_task"
+
+
     # =========================
     # 架构问题检测
     # =========================
@@ -156,7 +213,17 @@ def review_router(state):
     # 正常审核流程
     # =========================
 
-    if score >= 90:
+    if (
+        review_pass
+        and
+        score >= 90
+        and
+        not issues
+        and
+        code_check_success
+        and
+        compile_success
+    ):
 
         print(
             "[Review Router]审核通过"

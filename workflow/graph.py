@@ -15,12 +15,13 @@ from agents.coder import CoderAgent
 from agents.code_checker import CodeCheckerAgent
 from agents.reviewer import ReviewerAgent
 from agents.repair import RepairAgent
-
+from agents.unity_compiler import unity_compile_agent
 from workflow.router import router
 from workflow.review_router import review_router
 from workflow.task import finish_task
 
 from llm.deepseek import DeepSeekLLM
+from tools.file_manager import FileManager
 
 
 class AgentWorkflow:
@@ -59,8 +60,11 @@ class AgentWorkflow:
             self.llm
         )
 
+        self.file_manager = FileManager()
+
         self.repair = RepairAgent(
-            self.llm
+            self.llm,
+            self.file_manager
         )
 
         self.workflow = StateGraph(
@@ -164,6 +168,32 @@ class AgentWorkflow:
         )
 
 
+    def unity_compiler_router(self,state):
+        """
+        Unity Compiler结果路由
+        """
+
+        compile_result = state.get(
+            "compile_result",
+            {}
+        )
+
+
+        if compile_result.get(
+            "system_error",
+            False
+        ):
+
+            print(
+                "[Unity Compiler Router]系统错误，终止修复循环"
+            )
+
+            return "finish_task"
+
+
+        return "reviewer"
+
+
     def finish_node(self,state):
         """
         工作流结束
@@ -254,6 +284,11 @@ class AgentWorkflow:
             lambda state: state
         )
 
+        self.workflow.add_node(
+            "unity_compiler",
+            unity_compile_agent
+        )
+
 
         self.workflow.set_entry_point(
             "coordinator"
@@ -320,7 +355,17 @@ class AgentWorkflow:
         # Code Checker
         self.workflow.add_edge(
             "code_checker",
-            "reviewer"
+            "unity_compiler"
+        )
+
+
+        self.workflow.add_conditional_edges(
+            "unity_compiler",
+            self.unity_compiler_router,
+            {
+                "reviewer":"reviewer",
+                "finish_task":"finish_task"
+            }
         )
 
 
@@ -331,6 +376,7 @@ class AgentWorkflow:
             {
                 "reviewer":"reviewer",
                 "repair":"repair",
+                "architecture":"architecture",
                 "finish_task":"finish_task"
             }
         )
@@ -354,9 +400,9 @@ class AgentWorkflow:
         self.workflow.set_entry_point(
             "debug_start"
         )
-    
+
         return self.workflow.compile()
-        
+
     def compile(self):
         """
         编译Workflow
