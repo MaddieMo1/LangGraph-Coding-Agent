@@ -1,4 +1,4 @@
-# LangGraph Coding Agent
+# 🚀 LangGraph Coding Agent
 
 <p align="center">
   <img src="./assets/banner.png" alt="LangGraph Coding Agent 项目横幅" />
@@ -16,9 +16,11 @@
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
-## 项目简介
+## 🌟 项目简介
 
 LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件工程任务。当前版本可以分析需求、设计架构、规划并生成多个文件、执行静态检查、编译 Unity C# 代码、结合编译器证据进行审核，并在有限次数内自动修复错误。
+
+> 💡 **项目目标**：让 AI Agent 不只“生成代码”，还能够读取真实编译器反馈、定位问题、执行修复并验证最终结果。
 
 ```text
 需求分析 → 架构设计 → 文件规划 → 代码生成
@@ -28,7 +30,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## Day06-4 已实现能力
+## ✨ Day06-4 已实现能力
 
 - 在独立测试工程中执行真实 Unity BatchMode 编译。
 - 结构化解析并去重 C# 编译错误。
@@ -54,7 +56,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 → finish_task
 ```
 
-## 智能体职责
+## 🤖 智能体职责
 
 | 智能体 | 职责 |
 |---|---|
@@ -68,7 +70,11 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 | Reviewer | 综合代码、静态检查和编译器证据进行审核 |
 | Repair | 根据结构化根因修复文件 |
 
-## 工作流
+## 🔄 工作流
+
+<p align="center">
+  <img src="./assets/workflow.png" alt="LangGraph Coding Agent 工作流" width="900" />
+</p>
 
 ```mermaid
 flowchart TD
@@ -89,7 +95,27 @@ flowchart TD
 
 修复循环具有明确的次数上限。达到上限时会结束执行，但不会将失败状态误报为成功。
 
-## 项目结构
+## 📸 运行效果
+
+### 🧭 多智能体工作流
+
+<p align="center">
+  <img src="./assets/demo_workflow_log.png" alt="多智能体工作流运行日志" width="900" />
+</p>
+
+### 🛠️ 自动修复闭环
+
+<p align="center">
+  <img src="./assets/demo_repair_log.png" alt="自动修复闭环运行日志" width="900" />
+</p>
+
+### 📂 多文件生成结果
+
+<p align="center">
+  <img src="./assets/demo_generated_files.png" alt="多文件代码生成结果" width="900" />
+</p>
+
+## 🗂️ 项目结构
 
 ```text
 LangGraph-Coding-Agent/
@@ -123,7 +149,7 @@ LangGraph-Coding-Agent/
 └── LICENSE
 ```
 
-## 安装
+## 📦 安装
 
 ```bash
 git clone https://github.com/MaddieMo1/LangGraph-Coding-Agent.git
@@ -131,7 +157,7 @@ cd LangGraph-Coding-Agent
 pip install -r requirements.txt
 ```
 
-## 配置
+## ⚙️ 配置
 
 复制 `.env.example` 并重命名为 `.env`，然后配置 DeepSeek 与本地 Unity 测试环境：
 
@@ -146,13 +172,13 @@ UNITY_TEST_PROJECT_PATH=D:\Unity\Unity_Project\CodingAgentTest
 
 Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSettings/` 目录。生成脚本只会同步到测试工程的 `Assets/Generated`。
 
-## 运行
+## ▶️ 运行
 
 ```bash
 python main.py
 ```
 
-## Day06-4 验收标准
+## 🧪 Day06-4 验收标准
 
 已验证的验收流程会先备份 `generated`，再注入一个临时 C# 语法错误，并执行真实修复闭环。通过结果必须同时满足：
 
@@ -165,18 +191,18 @@ python main.py
 清理阶段：恢复后的 generated 代码再次编译成功
 ```
 
-不能只根据 `finish_task` 判断成功，必须同时检查编译器、静态检查器和 Reviewer 的状态字段。
+> ⚠️ **重要**：不能只根据 `finish_task` 判断成功，必须同时检查编译器、静态检查器和 Reviewer 的状态字段。
 
-## 开发路线
+## 🗺️ 开发路线
 
-### v0.1.0 — 已完成
+### ✅ v0.1.0 — 已完成
 
 - 多智能体工作流；
 - 架构设计与文件规划；
 - 多文件代码生成；
 - Reviewer 与基础修复循环。
 
-### v0.2.0 — 已完成（Day06-4）
+### ✅ v0.2.0 — 已完成（Day06-4）
 
 - 编译器级代码检查；
 - 真实 Unity BatchMode 编译；
@@ -185,13 +211,13 @@ python main.py
 - 严格通过条件与有限路由；
 - 真实编译—修复—验证闭环。
 
-### v0.3.0 — 下一阶段（Day06-5）
+### 🚧 v0.3.0 — 下一阶段（Day06-5）
 
 - 工程化 Repair Tool；
 - 使用精准补丁替代 Agent 直接写文件；
 - 补丁历史与验证元数据。
 
-### 后续计划
+### 🔭 后续计划
 
 - Unity API 知识检索；
 - 项目级代码理解；
@@ -199,10 +225,10 @@ python main.py
 - 人工审批工作流；
 - 隔离执行沙箱。
 
-## 参与贡献
+## 🤝 参与贡献
 
 欢迎参与项目开发。提交代码前请阅读[贡献指南](./CONTRIBUTING.md)。
 
-## 许可证
+## 📄 许可证
 
 本项目使用 [MIT 许可证](./LICENSE)。
