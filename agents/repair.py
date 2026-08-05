@@ -1,444 +1,436 @@
 # =========================
 # Repair Agent
-# 代码修复Agent
 # =========================
-
-from llm.deepseek import DeepSeekLLM
+import re
 
 from prompts.repair_prompt import repair_prompt
-
 from utils.code_extract import extract_code
-
-from tools.file_manager import FileManager
 
 
 class RepairAgent:
     """
-    Repair Agent核心处理类
+    Repair Agent
 
     负责:
-    1.读取Reviewer问题
-    2.分析涉及文件
-    3.读取多文件代码上下文
-    4.调用LLM修复代码
-    5.保存修复结果
-    6.记录修复历史
+    1. 分析Reviewer Root Cause
+    2. 自动选择修复策略
+    3. 执行简单代码修复
+    4. 调用LLM处理复杂修复
     """
 
-
-    def __init__(self, llm):
+    def __init__(
+        self,
+        llm,
+        file_manager
+    ):
         """
         初始化Repair Agent
+
+        Args:
+            llm:
+                DeepSeek模型
+
+            file_manager:
+                文件管理工具
         """
 
         self.llm = llm
+        self.file_manager = file_manager
 
-        self.file_manager = FileManager()
 
-    def normalize_file_path(self,file_name):
+    def run(
+        self,
+        state
+    ):
         """
-        标准化修复文件路径
-    
+        执行代码修复
+
         Args:
-            file_name:
-                Reviewer返回的问题文件路径
-    
+            state:
+                LangGraph状态
+
         Returns:
-            标准化后的generated文件路径
+            修复结果
         """
-    
-        if not file_name:
-    
-            return ""
-    
-    
-        # 统一路径分隔符
-    
-        file_name = file_name.replace(
-            "\\",
-            "/"
+
+        print(
+            "[Repair Agent]开始执行"
         )
-    
-    
-        # 去除空格
-    
-        file_name = file_name.strip()
-    
-    
-        # 处理./generated路径
-    
-        if file_name.startswith(
-            "./generated/"
-        ):
-    
-            return file_name.replace(
-                "./",
+
+
+        review = state.get(
+            "review",
+            {}
+        )
+
+
+        root_causes = state.get(
+            "root_causes",
+            []
+        )
+
+
+        if not root_causes:
+
+            root_causes = review.get(
+                "root_causes",
+                []
+            )
+
+        issues = review.get(
+            "remaining_issues",
+            []
+        )
+
+
+        if not root_causes and not issues:
+
+            print(
+                "[Repair Agent]没有有效问题"
+            )
+
+            return {
+                "current_agent":
+                "repair"
+            }
+
+
+        repair_round = (
+            state.get(
+                "repair_count",
+                0
+            )
+            +
+            1
+        )
+
+
+        print(
+            f"[Repair Agent]第{repair_round}轮修复"
+        )
+
+
+        result = self.route_fix(
+            root_causes,
+            issues
+        )
+
+
+        return {
+
+            "repair_count":
+            repair_round,
+
+            "repair_history":
+            state.get(
+                "repair_history",
+                []
+            )
+            +
+            [
+                result
+            ],
+
+            "current_agent":
+            "repair"
+        }
+
+
+    # =========================
+    # Root Cause Router
+    # =========================
+
+    def route_fix(
+        self,
+        root_causes,
+        issues
+    ):
+        """
+        根据Root Cause选择修复策略
+
+        Args:
+            root_causes:
+                根因列表
+
+            issues:
+                问题列表
+
+        Returns:
+            修复记录
+        """
+
+        actions=[]
+
+
+        for root in root_causes:
+
+            action = root.get(
+                "fix_action",
+                {}
+            )
+
+
+            operation = action.get(
+                "operation",
                 ""
             )
-    
-    
-        # 已经包含generated目录
-    
-        if file_name.startswith(
-            "generated/"
-        ):
-    
-            return file_name
-    
-    
-        # 默认添加generated目录
-    
-        return (
+
+
+            print(
+                f"[Repair Router]检测:{operation}"
+            )
+
+
+            if operation=="add_using":
+
+                success = self.fix_add_using(
+                    root
+                )
+
+                actions.append(
+                    {
+                        "type":
+                        "add_using",
+
+                        "success":
+                        success
+                    }
+                )
+
+
+            elif operation=="modify_namespace":
+
+                success = self.fix_namespace(
+                    root
+                )
+
+                actions.append(
+                    {
+                        "type":
+                        "namespace",
+
+                        "success":
+                        success
+                    }
+                )
+
+
+            else:
+
+                actions.append(
+                    self.llm_repair(
+                        root,
+                        issues
+                    )
+                )
+
+
+        return {
+            "round":
+            len(actions),
+
+            "actions":
+            actions
+        }
+
+
+    # =========================
+    # 自动添加using
+    # =========================
+
+    def fix_add_using(
+        self,
+        root
+    ):
+        """
+        自动添加using引用
+
+        Args:
+            root:
+                Root Cause
+
+        Returns:
+            是否成功
+        """
+
+        file_name = root.get(
+            "target_file",
+            root.get(
+                "file",
+                ""
+            )
+        )
+
+
+        namespace = root.get(
+            "fix_action",
+            {}
+        ).get(
+            "namespace",
+            ""
+        )
+
+
+        if not file_name or not namespace:
+
+            return False
+
+
+        path = (
             "generated/"
             +
             file_name
         )
 
 
-    def run(self,state):
-        """
-        执行代码修复
-    
-        Args:
-            state:
-                Agent共享状态
-    
-        Returns:
-            修复结果状态
-        """
-    
-        print("[Repair Agent]开始执行")
-    
-    
-        review = state.get(
-            "review",
-            {}
+        code = self.file_manager.read_file(
+            path
         )
-    
-    
-        issues = review.get(
-            "remaining_issues",
-            []
+
+
+        if not code:
+
+            return False
+
+
+        using_line = (
+            f"using {namespace};"
         )
-    
-    
-        if not issues:
-    
-            print("[Repair Agent]没有需要修复的问题")
-    
-            return {
-                "repair_status":"success"
-            }
-    
-    
-        issue = issues[0]
-    
-    
-        # =========================
-        # 无效问题检测
-        # 防止修复unknown文件
-        # =========================
-    
-        file_name = issue.get(
-            "file",
-            ""
+
+
+        if re.search(
+            rf"using\s+{namespace};",
+            code
+        ):
+            return True
+
+        code_lines = code.splitlines()
+
+
+        insert_index=0
+
+
+        for index,line in enumerate(code_lines):
+
+            if line.startswith(
+                "using "
+            ):
+
+                insert_index=index+1
+
+
+        code_lines.insert(
+            insert_index,
+            using_line
         )
-    
-    
-        if file_name in [
-            "",
-            "unknown",
-            "Unknown"
-        ]:
-    
-            print(
-                "[Repair Agent]问题未定位到有效文件，取消修复"
-            )
-    
-    
-            repair_round = state.get(
-                "repair_count",
-                0
-            ) + 1
-    
-    
-            repair_record = {
-    
-                "round":
-                repair_round,
-    
-                "file":
-                file_name,
-    
-                "issue":
-                issue.get(
-                    "problem",
-                    ""
-                ),
-    
-                "status":
-                "invalid_issue"
-    
-            }
-    
-    
-            return {
-    
-                "repair_count":
-                repair_round,
-    
-    
-                "repair_status":
-                "invalid_issue",
-    
-    
-                "repair_result":
-                repair_record,
-    
-    
-                "repair_history":
-                state.get(
-                    "repair_history",
-                    []
-                )
-                +
-                [
-                    repair_record
-                ],
-    
-    
-                "agent_history":
-                state.get(
-                    "agent_history",
-                    []
-                )
-                +
-                [
-                    "Repair Agent跳过无效问题"
-                ]
-    
-            }
-    
-    
-        repair_round = state.get(
-            "repair_count",
-            0
-        ) + 1
-    
-    
-        repair_record = {
-    
-            "round":
-            repair_round,
-    
-            "file":
-            issue.get(
-                "file",
-                ""
-            ),
-    
-            "related_files":
-            issue.get(
-                "related_files",
-                []
-            ),
-    
-            "issue":
-            issue.get(
-                "problem",
-                ""
-            ),
-    
-            "status":
-            "running"
-    
-        }
 
 
-    print(
-        f"[Repair Agent]修复第{repair_round}轮:{repair_record['issue']}"
-    )
+        new_code="\n".join(
+            code_lines
+        )
 
 
-    success = self.repair_issue(
-        issue
-    )
+        self.file_manager.write_file(
+            path,
+            new_code
+        )
 
-
-    if success:
-
-        repair_record["status"] = "success"
 
         print(
-            "[Repair Agent]修复成功"
+            f"[Repair Agent]自动添加using:{namespace}"
         )
 
 
-    else:
-
-        repair_record["status"] = "failed"
-
-        print(
-            "[Repair Agent]修复失败"
-        )
+        return True
 
 
-    return {
 
-        "repair_count":
-        repair_round,
+    # =========================
+    # Namespace修复
+    # =========================
 
-
-        "repair_status":
-        repair_record["status"],
-
-
-        "repair_result":
-        repair_record,
-
-
-        "repair_history":
-        state.get(
-            "repair_history",
-            []
-        )
-        +
-        [
-            repair_record
-        ],
-
-
-        "agent_history":
-        state.get(
-            "agent_history",
-            []
-        )
-        +
-        [
-            "Repair Agent完成修复"
-        ]
-
-    }
-
-
-    def get_repair_files(self,issue):
+    def fix_namespace(
+        self,
+        root
+    ):
         """
-        获取修复涉及文件
+        修复namespace问题
 
         Args:
-            issue:
-                Reviewer问题
+            root:
+                Root Cause
 
         Returns:
-            文件列表
+            是否成功
+        """
+
+        return False
+
+
+
+    # =========================
+    # LLM复杂修复
+    # =========================
+
+    def llm_repair(
+        self,
+        root,
+        issues
+    ):
+        """
+        调用DeepSeek处理复杂修复
+
+        Args:
+            root:
+                根因
+
+            issues:
+                问题列表
+
+        Returns:
+            修复结果
         """
 
         files = []
 
+        for key in [
+            "target_file",
+            "source_file"
+        ]:
 
-        main_file = issue.get(
-            "file",
-            ""
-        )
-
-
-        if main_file:
-
-            files.append(
-                main_file
+            file = root.get(
+                key,
+                ""
             )
 
+            if file:
 
-        related_files = issue.get(
-            "related_files",
-            []
-        )
+                files.append(
+                    file
+                )
 
 
         files.extend(
-            related_files
+            root.get(
+                "related_files",
+                []
+            )
         )
 
 
-        return list(
-            set(files)
+        context = self.collect_context(
+            files
         )
-
-
-    def repair_issue(self,issue):
-        """
-        修复代码问题
-
-        Args:
-            issue:
-                Reviewer发现的问题
-
-        Returns:
-            是否修复成功
-        """
-
-        files = self.get_repair_files(
-            issue
-        )
-
-
-        if not files:
-
-            print("[Repair Agent]没有定位文件")
-
-            return False
-
-
-        code_context = ""
-
-
-        for file in files:
-
-            file_path =self.normalize_file_path(
-                file
-            )
-
-
-            print(
-                f"[Repair Agent]读取文件:{file_path}"
-            )
-
-
-            code = self.file_manager.read_file(
-                file_path
-            )
-
-
-            if not code:
-
-                continue
-
-
-            code_context += f"""
-
-====================
-FILE:{file}
-====================
-
-{code}
-
-"""
-
-
-        if not code_context:
-
-            print("[Repair Agent]代码为空")
-
-            return False
 
 
         prompt = repair_prompt(
-            code_context,
-            issue
+            context,
+            issues,
+            root.get(
+                "fix_strategy",
+                ""
+            )
         )
-
-
-        print("[Repair Agent]调用DeepSeek修复")
 
 
         result = self.llm.invoke(
@@ -446,192 +438,182 @@ FILE:{file}
         )
 
 
-        if not result:
-
-            print("[Repair Agent]模型无返回")
-
-            return False
-
-
-        result = extract_code(
-            result
+        content = (
+            result.content
+            if hasattr(
+                result,
+                "content"
+            )
+            else str(result)
         )
 
 
-        if not result:
-
-            print("[Repair Agent]代码解析失败")
-
-            return False
-
-
-        if len(files) == 1:
-
-            file_path = self.normalize_file_path(
-                files[0]
-            )
-
-
-            self.file_manager.write_file(
-                file_path,
-                result
-            )
-
-
-            print(
-                f"[Repair Agent]写入完成:{file_path}"
-            )
-
-
-            return True
-
-
-        print("[Repair Agent]多文件修复")
-
-        return self.write_multi_files(
-            result
+        written_files = self.write_llm_result(
+            content
         )
 
 
-    def write_multi_files(self,result):
+        target_file = root.get(
+            "fix_action",
+            {}
+        ).get(
+            "target",
+            ""
+        )
+
+
+        if not target_file:
+
+            target_file = root.get(
+                "target_file",
+                root.get(
+                    "file",
+                    ""
+                )
+            )
+
+
+        if not written_files and target_file:
+
+            target_file = target_file.replace(
+                "\\",
+                "/"
+            ).split(
+                "/"
+            )[-1]
+
+
+            code = extract_code(
+                content
+            )
+
+
+            if code:
+
+                self.file_manager.write_file(
+                    "generated/"
+                    +
+                    target_file,
+                    code
+                )
+
+
+                written_files.append(
+                    target_file
+                )
+
+
+                print(
+                    f"[Repair Agent]写入:{target_file}"
+                )
+
+
+        return {
+
+            "type":
+            "llm",
+
+            "success":
+            bool(
+                written_files
+            ),
+
+            "files":
+            written_files,
+
+            "root":
+            root
+        }
+
+
+
+    # =========================
+    # Context Expansion
+    # =========================
+
+    def collect_context(
+        self,
+        files
+    ):
         """
-        写入多个修复文件
-
-        Args:
-            result:
-                模型返回代码
-
-        Returns:
-            是否成功
+        收集修复上下文
         """
 
-        success = False
+        context=""
 
 
-        # 清理Markdown代码块
+        for file in files:
 
-        result = result.replace(
-            "```csharp",
-            ""
-        )
+            path = (
+                "generated/"
+                +
+                file
+            )
 
-
-        result = result.replace(
-            "```cs",
-            ""
-        )
-
-
-        result = result.replace(
-            "```",
-            ""
-        )
-
-
-        blocks = result.split(
-            "FILE:"
-        )
-
-
-        for block in blocks:
-
-            block = block.strip()
-
-
-            if not block:
-
-                continue
-
-
-            lines = block.split(
-                "\n",
-                1
+            code = self.file_manager.read_file(
+                path
             )
 
 
-            if len(lines) != 2:
-
-                continue
-
-
-            file_name = lines[0].strip()
-
-
-            code = lines[1].strip()
-
-
-            # =========================
-            # 文件名过滤
-            # =========================
-
-            if not file_name.endswith(
-                ".cs"
-            ):
-
-                continue
-
-
-            if "/" in file_name:
-
-                file_name = file_name.split(
-                    "/"
-                )[-1]
-
-
-            if "\\" in file_name:
-
-                file_name = file_name.split(
-                    "\\"
-                )[-1]
-
-
-            invalid_names = [
-
-                "using",
-
-                "namespace",
-
-                "public",
-
-                "class"
-
-            ]
-
-
-            if any(
-                name in file_name
-                for name in invalid_names
-            ):
-
-                continue
-
-
-            if len(file_name) > 80:
-
-                continue
-
-
-            if not code:
-
-                continue
-
-
-            file_path = self.normalize_file_path(
-                file_name
-            )
-
-            self.file_manager.write_file(
-                file_path,
+            context += (
+                "\nFILE:"
+                +
+                file
+                +
+                "\n"
+                +
                 code
             )
 
 
-            print(
-                f"[Repair Agent]写入完成:{file_path}"
+        return context
+
+
+
+    def write_llm_result(
+        self,
+        content
+    ):
+        """
+        写入LLM多文件结果
+        """
+
+        matches = re.findall(
+            r"FILE:(.*?)\r?\nCODE_START\r?\n(.*?)CODE_END",
+            content,
+            re.S
+        )
+
+
+        written_files = []
+
+
+        for name,code in matches:
+
+            file_name = name.strip().replace(
+                "\\",
+                "/"
+            ).split(
+                "/"
+            )[-1]
+
+
+            self.file_manager.write_file(
+                "generated/"
+                +
+                file_name,
+                code.strip()
             )
 
 
-            success = True
+            written_files.append(
+                file_name
+            )
 
 
-        return success
+            print(
+                f"[Repair Agent]写入:{file_name}"
+            )
+
+
+        return written_files

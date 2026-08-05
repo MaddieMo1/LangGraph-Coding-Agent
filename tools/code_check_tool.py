@@ -4,6 +4,7 @@
 # =========================
 
 import os
+import re
 
 
 class CodeCheckTool:
@@ -12,8 +13,9 @@ class CodeCheckTool:
 
     负责:
     1.扫描生成代码文件
-    2.执行基础代码检查
-    3.返回错误信息
+    2.执行C#静态检查
+    3.检测常见代码错误
+    4.输出结构化检查结果
     """
 
 
@@ -23,13 +25,13 @@ class CodeCheckTool:
 
         Args:
             project_path:
-                项目代码目录
+                代码目录
 
         Returns:
             检查结果
         """
 
-        errors = []
+        errors=[]
 
 
         if not os.path.exists(project_path):
@@ -38,8 +40,7 @@ class CodeCheckTool:
 
                 "success":False,
 
-                "errors":
-                [
+                "errors":[
                     {
                         "file":"",
                         "error":"PATH_ERROR",
@@ -50,29 +51,30 @@ class CodeCheckTool:
             }
 
 
-        files = self.get_cs_files(
+        files=self.get_cs_files(
             project_path
         )
 
 
         for file in files:
 
-            result = self.check_file(
+            result=self.check_file(
                 file
             )
 
-
-            if result:
-
-                errors.extend(
-                    result
-                )
+            errors.extend(
+                result
+            )
 
 
         return {
 
             "success":
-            len(errors) == 0,
+            len(errors)==0,
+
+
+            "files_checked":
+            len(files),
 
 
             "errors":
@@ -85,20 +87,21 @@ class CodeCheckTool:
         """
         获取C#文件
 
-        Args:
-            project_path:
-                项目目录
-
         Returns:
             C#文件列表
         """
 
         files=[]
 
-
         for root,dirs,names in os.walk(
             project_path
         ):
+
+            # 排除Jupyter缓存目录
+            dirs[:] = [
+                d for d in dirs
+                if d != ".ipynb_checkpoints"
+            ]
 
             for name in names:
 
@@ -113,13 +116,13 @@ class CodeCheckTool:
                         )
                     )
 
-
         return files
+
 
 
     def check_file(self,file_path):
         """
-        检查单个文件
+        检查单个C#文件
 
         Args:
             file_path:
@@ -148,20 +151,67 @@ class CodeCheckTool:
             return [
 
                 {
-                    "file":file_path,
+                    "file":
+                    file_path,
 
-                    "error":"READ_ERROR",
+                    "error":
+                    "READ_ERROR",
 
-                    "message":str(e)
+                    "message":
+                    str(e)
+
                 }
 
             ]
 
 
-        # 基础括号检查
+        errors.extend(
+            self.check_brace(
+                file_path,
+                content
+            )
+        )
+
+
+        errors.extend(
+            self.check_empty_class(
+                file_path,
+                content
+            )
+        )
+
+
+        errors.extend(
+            self.check_unknown_method(
+                file_path,
+                content
+            )
+        )
+
+
+        errors.extend(
+            self.check_unity_api(
+                file_path,
+                content
+            )
+        )
+
+
+        return errors
+
+
+
+    def check_brace(self,file_path,content):
+        """
+        检查大括号数量
+
+        Returns:
+            错误列表
+        """
+
         if content.count("{") != content.count("}"):
 
-            errors.append(
+            return [
 
                 {
                     "file":
@@ -174,7 +224,128 @@ class CodeCheckTool:
                     "代码大括号数量不匹配"
                 }
 
+            ]
+
+        return []
+
+
+
+    def check_empty_class(self,file_path,content):
+        """
+        检查空类定义
+        """
+
+        errors=[]
+
+
+        pattern = r"class\s+\w+\s*\{[\s]*\}"
+
+
+        if re.search(
+            pattern,
+            content
+        ):
+
+            errors.append(
+
+                {
+                    "file":
+                    file_path,
+
+                    "error":
+                    "EMPTY_CLASS",
+
+                    "message":
+                    "检测到空类定义"
+                }
+
             )
+
+
+        return errors
+
+
+
+    def check_unknown_method(self,file_path,content):
+        """
+        检测明显不存在的方法调用
+
+        注意:
+        当前属于规则检测，
+        后续升级Unity Compiler解析。
+        """
+
+        errors=[]
+
+
+        blacklist=[
+            "NotExistFunction",
+            "UndefinedMethod",
+            "MissingFunction"
+        ]
+
+
+        for method in blacklist:
+
+            if method in content:
+
+                errors.append(
+
+                    {
+                        "file":
+                        file_path,
+
+                        "error":
+                        "METHOD_NOT_FOUND",
+
+                        "message":
+                        f"检测到未知方法调用:{method}"
+                    }
+
+                )
+
+
+        return errors
+
+
+
+    def check_unity_api(self,file_path,content):
+        """
+        Unity API规则检查
+        """
+
+        errors=[]
+
+
+        invalid_api={
+
+            "GameObject.FindObject":
+            "Unity不存在该API，请使用GameObject.Find",
+
+            "Transform.SetPosition":
+            "Unity不存在该API"
+
+        }
+
+
+        for api,message in invalid_api.items():
+
+            if api in content:
+
+                errors.append(
+
+                    {
+                        "file":
+                        file_path,
+
+                        "error":
+                        "UNITY_API_ERROR",
+
+                        "message":
+                        message
+                    }
+
+                )
 
 
         return errors
