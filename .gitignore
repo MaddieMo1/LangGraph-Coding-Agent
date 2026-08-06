@@ -37,6 +37,9 @@ generated_tests/
 memory/project_context.json
 memory/dependency_graph.json
 memory/patch_history.json
+memory/long_term_memory.json
+memory/approval_history.json
+memory/workflow_checkpoints.sqlite*
 
 # =========================
 # Model Files

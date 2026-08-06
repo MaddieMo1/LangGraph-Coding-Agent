@@ -22,43 +22,95 @@ class PatchHistory:
         after_content,
         apply_result
     ):
-        """记录已经成功应用的补丁。"""
+        """记录一个已经成功应用的补丁。"""
 
-        if not apply_result.get("success", False):
-            raise ValueError("不能记录应用失败的补丁")
+        return self.record_batch(
+            [
+                {
+                    "patch": patch,
+                    "before_content": before_content,
+                    "after_content": after_content,
+                    "apply_result": apply_result,
+                }
+            ]
+        )[0]
 
-        if not patch.get("changed", False):
-            raise ValueError("不能记录没有变化的补丁")
 
-        if (
-            self.diff_tool.hash_content(before_content)
-            != patch.get("before_hash")
-        ):
-            raise ValueError("补丁前版本哈希不匹配")
+    def record_batch(self, entries, metadata=None):
+        """Validate and persist an applied patch batch with one atomic save."""
 
-        if (
-            self.diff_tool.hash_content(after_content)
-            != patch.get("after_hash")
-        ):
-            raise ValueError("补丁后版本哈希不匹配")
+        if not isinstance(entries, list) or not entries:
+            raise ValueError("补丁批次不能为空")
 
-        record = {
-            "patch_id": uuid.uuid4().hex,
-            "created_at": self._now(),
-            "file": patch["file"],
-            "operation": patch["operation"],
-            "status": "applied",
-            "before_hash": patch["before_hash"],
-            "after_hash": patch["after_hash"],
-            "before_content": before_content,
-            "after_content": after_content,
-            "diff": patch["diff"],
-            "hunks": patch["hunks"],
-            "undone_at": ""
-        }
-        self.data["records"].append(record)
-        self._save()
-        return record
+        metadata = dict(metadata or {})
+        records = []
+
+        for entry in entries:
+            patch = entry["patch"]
+            before_content = entry["before_content"]
+            after_content = entry["after_content"]
+            apply_result = entry["apply_result"]
+
+            if not apply_result.get("success", False):
+                raise ValueError("不能记录应用失败的补丁")
+
+            if not patch.get("changed", False):
+                raise ValueError("不能记录没有变化的补丁")
+
+            if (
+                self.diff_tool.hash_content(before_content)
+                != patch.get("before_hash")
+            ):
+                raise ValueError("补丁前版本哈希不匹配")
+
+            if (
+                self.diff_tool.hash_content(after_content)
+                != patch.get("after_hash")
+            ):
+                raise ValueError("补丁后版本哈希不匹配")
+
+            record = {
+                "patch_id": uuid.uuid4().hex,
+                "created_at": self._now(),
+                "file": patch["file"],
+                "operation": patch["operation"],
+                "status": "applied",
+                "before_hash": patch["before_hash"],
+                "after_hash": patch["after_hash"],
+                "before_content": before_content,
+                "after_content": after_content,
+                "diff": patch["diff"],
+                "hunks": patch["hunks"],
+                "undone_at": "",
+                **metadata,
+            }
+            records.append(record)
+
+        original_records = list(self.data["records"])
+        self.data["records"].extend(records)
+        try:
+            self._save()
+        except Exception:
+            self.data["records"] = original_records
+            raise
+        return records
+
+
+    def remove_records(self, patch_ids):
+        """Compensate a failed cross-store approval transaction."""
+
+        patch_ids = set(patch_ids)
+        original_records = list(self.data["records"])
+        self.data["records"] = [
+            record
+            for record in self.data["records"]
+            if record.get("patch_id") not in patch_ids
+        ]
+        try:
+            self._save()
+        except Exception:
+            self.data["records"] = original_records
+            raise
 
 
     def list_records(self, file_name=None):

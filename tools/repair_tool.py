@@ -1,8 +1,6 @@
 import os
 import re
 
-from memory.patch_history import PatchHistory
-from tools.diff_tool import DiffTool
 from utils.code_extract import extract_code
 
 
@@ -20,18 +18,8 @@ class RepairTool:
         self.generated_root = os.path.realpath(
             os.path.abspath(generated_root)
         )
-        self.diff_tool = diff_tool or DiffTool(
-            file_manager,
-            self.generated_root
-        )
-        self.patch_history = patch_history or PatchHistory(
-            os.path.join(
-                os.path.dirname(self.generated_root),
-                "memory",
-                "patch_history.json"
-            ),
-            self.diff_tool
-        )
+        self.diff_tool = diff_tool
+        self.patch_history = patch_history
 
 
     def collect_context(self, file_names):
@@ -92,6 +80,7 @@ class RepairTool:
                 "success": True,
                 "changed": False,
                 "files": [normalized_name],
+                "changes": [],
                 "patches": [],
                 "patch_ids": [],
                 "error_code": "",
@@ -115,17 +104,17 @@ class RepairTool:
         if has_trailing_newline:
             new_code += newline
 
-        patch = self.diff_tool.create_patch(
-            normalized_name,
-            code,
-            new_code
-        )
-        return self._apply_change(
-            "add_using",
-            patch,
-            code,
-            new_code
-        )
+        return {
+            "type": "add_using",
+            "success": True,
+            "changed": True,
+            "files": [normalized_name],
+            "changes": [{"file": normalized_name, "content": new_code}],
+            "patches": [],
+            "patch_ids": [],
+            "error_code": "",
+            "error": ""
+        }
 
 
     def apply_llm_result(
@@ -133,7 +122,7 @@ class RepairTool:
         content,
         target_file=""
     ):
-        """校验并写入 LLM 返回的单文件或多文件修复结果。"""
+        """校验并返回 LLM 的单文件或多文件修复提案，不写入磁盘。"""
 
         if not isinstance(content, str) or not content.strip():
             return self._failure(
@@ -170,7 +159,7 @@ class RepairTool:
 
         try:
             for file_name, code in changes:
-                path, normalized_name = self._resolve_file(
+                _, normalized_name = self._resolve_file(
                     file_name
                 )
 
@@ -185,20 +174,8 @@ class RepairTool:
                     )
 
                 seen.add(normalized_name)
-                before_content = self.file_manager.read_file(
-                    path
-                )
-                patch = self.diff_tool.create_patch(
-                    normalized_name,
-                    before_content,
-                    code
-                )
                 validated_changes.append(
-                    (
-                        patch,
-                        before_content,
-                        code
-                    )
+                    {"file": normalized_name, "content": code}
                 )
         except ValueError as error:
             return self._failure(
@@ -206,144 +183,16 @@ class RepairTool:
                 str(error)
             )
 
-        files = []
-        patches = []
-        patch_ids = []
-        changed = False
-
-        for patch, before_content, after_content in validated_changes:
-            result = self._apply_change(
-                "llm",
-                patch,
-                before_content,
-                after_content
-            )
-            files.extend(result["files"])
-            patches.extend(result["patches"])
-            patch_ids.extend(result["patch_ids"])
-            changed = changed or result["changed"]
-
-            if not result["success"]:
-                return {
-                    "type": "llm",
-                    "success": False,
-                    "changed": changed,
-                    "files": files,
-                    "patches": patches,
-                    "patch_ids": patch_ids,
-                    "error_code": result["error_code"],
-                    "error": result["error"]
-                }
-
         return {
             "type": "llm",
             "success": True,
-            "changed": changed,
-            "files": files,
-            "patches": patches,
-            "patch_ids": patch_ids,
+            "changed": bool(validated_changes),
+            "files": [change["file"] for change in validated_changes],
+            "changes": validated_changes,
+            "patches": [],
+            "patch_ids": [],
             "error_code": "",
             "error": ""
-        }
-
-
-    def _apply_change(
-        self,
-        operation,
-        patch,
-        before_content,
-        after_content
-    ):
-        if not patch["changed"]:
-            return {
-                "type": operation,
-                "success": True,
-                "changed": False,
-                "files": [patch["file"]],
-                "patches": [],
-                "patch_ids": [],
-                "error_code": "",
-                "error": ""
-            }
-
-        apply_result = self.diff_tool.apply_patch(patch)
-
-        if not apply_result.get("success", False):
-            return {
-                "type": operation,
-                "success": False,
-                "changed": False,
-                "files": [],
-                "patches": [self._patch_summary(patch)],
-                "patch_ids": [],
-                "error_code": apply_result.get(
-                    "error_code",
-                    "PATCH_APPLY_ERROR"
-                ),
-                "error": apply_result.get(
-                    "error",
-                    "补丁应用失败"
-                )
-            }
-
-        try:
-            record = self.patch_history.record_patch(
-                patch,
-                before_content,
-                after_content,
-                apply_result
-            )
-        except (OSError, ValueError) as error:
-            inverse_patch = self.diff_tool.create_patch(
-                patch["file"],
-                after_content,
-                before_content
-            )
-            rollback_result = self.diff_tool.apply_patch(
-                inverse_patch
-            )
-            rollback_error = ""
-
-            if not rollback_result.get("success", False):
-                rollback_error = (
-                    "; 自动回滚失败:"
-                    + rollback_result.get("error", "")
-                )
-
-            return {
-                "type": operation,
-                "success": False,
-                "changed": not rollback_result.get(
-                    "success",
-                    False
-                ),
-                "files": [],
-                "patches": [self._patch_summary(patch)],
-                "patch_ids": [],
-                "error_code": "HISTORY_WRITE_ERROR",
-                "error": str(error) + rollback_error
-            }
-
-        return {
-            "type": operation,
-            "success": True,
-            "changed": True,
-            "files": [patch["file"]],
-            "patches": [self._patch_summary(patch)],
-            "patch_ids": [record["patch_id"]],
-            "error_code": "",
-            "error": ""
-        }
-
-
-    @staticmethod
-    def _patch_summary(patch):
-        return {
-            "file": patch["file"],
-            "operation": patch["operation"],
-            "before_hash": patch["before_hash"],
-            "after_hash": patch["after_hash"],
-            "diff": patch["diff"]
         }
 
 
@@ -416,6 +265,7 @@ class RepairTool:
             "success": False,
             "changed": False,
             "files": [],
+            "changes": [],
             "patches": [],
             "patch_ids": [],
             "error_code": "REPAIR_TOOL_ERROR",

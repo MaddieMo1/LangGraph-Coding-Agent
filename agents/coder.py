@@ -9,9 +9,6 @@ from prompts.coder_prompt import coder_prompt
 
 from utils.code_extract import extract_code
 
-from tools.file_manager import FileManager
-
-
 class CoderAgent:
     """
     Coder Agent核心处理类
@@ -24,14 +21,13 @@ class CoderAgent:
     """
 
 
-    def __init__(self):
+    def __init__(self, llm=None, generated_root="generated"):
         """
         初始化Coder Agent
         """
 
-        self.llm = DeepSeekLLM()
-
-        self.file_manager = FileManager()
+        self.llm = llm or DeepSeekLLM()
+        self.generated_root = generated_root
 
 
 
@@ -48,9 +44,6 @@ class CoderAgent:
         """
 
         print("[Coder Agent]开始多文件生成")
-
-        self.file_manager.clear_generated_files()
-
 
         files = state.get(
             "files",
@@ -89,6 +82,12 @@ class CoderAgent:
 
             "code":
             generated_files,
+
+            "proposed_changes":
+            generated_files,
+
+            "proposal_source":
+            "coder",
 
 
             "tools":
@@ -175,21 +174,8 @@ class CoderAgent:
         )
 
 
-        path = (
-            "generated/"
-            +
-            file_name
-        )
-
-
-        self.file_manager.write_file(
-            path,
-            code
-        )
-
-
         print(
-            f"[Coder Agent]生成完成:{path}"
+            f"[Coder Agent]生成提案完成:{file_name}"
         )
 
 
@@ -208,10 +194,13 @@ class CoderAgent:
             "tool":
             {
                 "tool":
-                "file_manager",
+                "change_proposal",
 
                 "path":
-                path
+                "generated/" + file_name,
+
+                "status":
+                "pending"
             }
 
         }

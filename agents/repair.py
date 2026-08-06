@@ -129,6 +129,10 @@ class RepairAgent:
             )
         ]
 
+        proposed_changes = []
+        for action in successful_actions:
+            proposed_changes.extend(action.get("changes", []))
+
 
         if actions and len(successful_actions) == len(actions):
             repair_status = "success"
@@ -165,6 +169,12 @@ class RepairAgent:
             [
                 repair_record
             ],
+
+            "proposed_changes":
+            proposed_changes,
+
+            "proposal_source":
+            "repair",
 
             "current_agent":
             "repair"

@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.6.0-success" alt="版本 v0.6.0">
+  <img src="https://img.shields.io/badge/Version-v0.7.0-success" alt="版本 v0.7.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -30,7 +30,14 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## ✨ Day10 已实现能力
+## ✨ Day11 已实现能力
+
+- Coder 与 Repair 只生成补丁提案，生产 C# 文件在人工审批前保持不变。
+- LangGraph 使用原生 `interrupt()` 暂停审批，并通过同一 thread ID 恢复工作流。
+- SQLite 持久化工作流检查点，进程重启后仍可恢复待审批任务。
+- 默认整批批准或拒绝；高级模式支持逐文件选择，批准子集仍原子应用。
+- 应用前校验路径、扩展名、源文件哈希和补丁内容；冲突时不写入。
+- Gradio 本地 UI 展示逐文件 Diff、审批状态和可恢复的 thread ID。
 
 - 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
 - Diff Patch：生成 Git 风格差异、校验源文件哈希、记录补丁历史并支持安全撤销。
@@ -99,7 +106,10 @@ flowchart TD
     C --> D[架构验证]
     D --> E[文件规划]
     E --> F[代码生成]
-    F --> T[EditMode 测试生成]
+    F --> P1[变更提案]
+    P1 --> A1[人工审批]
+    A1 -->|批准| T[EditMode 测试生成]
+    A1 -->|拒绝| Z
     T --> G[静态检查]
     G --> H[Unity 编译]
     H -->|系统错误| Z[以失败状态结束]
@@ -110,7 +120,10 @@ flowchart TD
     I -->|严格通过| J[完成任务]
     I -->|编译或代码问题| K[代码修复]
     I -->|架构问题| C
-    K --> G
+    K --> P2[修复提案]
+    P2 --> A2[人工审批]
+    A2 -->|批准| G
+    A2 -->|拒绝| Z
 ```
 
 修复循环具有明确的次数上限。达到上限时会结束执行，但不会将失败状态误报为成功。
@@ -209,6 +222,16 @@ Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSett
 
 ## ▶️ 运行
 
+启动本地人工审批界面（推荐）：
+
+```bash
+python app.py
+```
+
+Gradio 仅监听 `127.0.0.1`，不会自动创建公共分享链接。默认检查点位于 `memory/workflow_checkpoints.sqlite`；刷新或重启后，可使用界面显示的 thread ID 恢复待审批任务。
+
+运行命令行示例：
+
 ```bash
 python main.py
 ```
@@ -274,11 +297,13 @@ python main.py
 - 历史成功方案的有界检索与提示词注入；
 - 原子写入、版本校验和系统错误隔离。
 
-### 🚧 下一阶段（Day11）
+### ✅ v0.7.0 — 已完成（Day11）
 
-- Human in the Loop；
+- Coder 与 Repair 的 Human in the Loop 审批门；
+- SQLite 检查点与 thread ID 恢复；
 - 按文件展示 Diff；
-- Accept / Reject 后再应用修改。
+- 默认整批审批，高级模式逐文件选择；
+- 冲突检测、原子应用、补偿回滚和幂等决策。
 
 ### 🔭 后续计划
 
