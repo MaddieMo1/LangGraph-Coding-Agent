@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.5.0-success" alt="版本 v0.5.0">
+  <img src="https://img.shields.io/badge/Version-v0.6.0-success" alt="版本 v0.6.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -30,7 +30,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## ✨ Day09 已实现能力
+## ✨ Day10 已实现能力
 
 - 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
 - Diff Patch：生成 Git 风格差异、校验源文件哈希、记录补丁历史并支持安全撤销。
@@ -41,6 +41,9 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Test Generator 通过安全 Tool 将结构化 EditMode 测试写入独立目录。
 - Unity Test Tool 在临时沙箱工程中运行 NUnit 测试，真实 Unity 工程可以保持打开。
 - 测试 XML 报告进入 Reviewer；断言失败进入修复循环，测试基础设施错误安全停止。
+- Long-Term Memory 使用版本化 JSON，按 Unity 项目隔离 `project_memory`、`coding_style`、`bug_history` 和 `solution_history`。
+- 只有通过后续编译或测试验证的 Repair 才会成为可复用方案；系统与环境错误不会污染缺陷记忆。
+- Reviewer 与 Repair 会优先参考同错误码的历史成功方案，但当前 Compiler、NUnit 和 Root Cause 证据始终优先。
 
 ### Day06-4 编译修复闭环
 
@@ -264,16 +267,22 @@ python main.py
 - NUnit XML 结构化报告；
 - 编译、测试、审核联合通过门槛。
 
-### 🚧 下一阶段（Day10）
+### ✅ v0.6.0 — 已完成（Day10）
 
-- 长期 Memory Agent；
-- 项目记忆、编码风格和缺陷历史；
-- 跨任务记忆检索与更新。
+- 项目隔离的四类长期记忆；
+- 缺陷指纹、复发计数和验证后解决状态；
+- 历史成功方案的有界检索与提示词注入；
+- 原子写入、版本校验和系统错误隔离。
+
+### 🚧 下一阶段（Day11）
+
+- Human in the Loop；
+- 按文件展示 Diff；
+- Accept / Reject 后再应用修改。
 
 ### 🔭 后续计划
 
 - Unity API 知识检索；
-- 长期记忆；
 - 人工审批工作流；
 - 隔离执行沙箱。
 

@@ -52,6 +52,9 @@ class AgentState(TypedDict):
     dependency_graph_path: str
     dependency_graph_status: str
     dependency_graph_error: str
+    memory_context: Dict[str, Any]
+    memory_status: str
+    memory_error: str
 
 
     # =========================

@@ -29,12 +29,14 @@ from llm.deepseek import DeepSeekLLM
 from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
 from memory.dependency_graph import DependencyGraphStore
+from memory.long_term import LongTermMemoryStore
 from tools.diff_tool import DiffTool
 from tools.dependency_graph import DependencyGraphBuilder
 from tools.file_manager import FileManager
 from tools.project_scanner import UnityProjectScanner
 from tools.repair_tool import RepairTool
 from tools.test_generation_tool import TestGenerationTool
+from workflow.long_term_memory import LongTermMemoryNode
 
 
 class AgentWorkflow:
@@ -91,6 +93,16 @@ class AgentWorkflow:
         unity_project_path = os.getenv(
             "UNITY_TEST_PROJECT_PATH",
             r"D:\Unity\Unity_Project\CodingAgentTest"
+        )
+
+        self.long_term_memory = LongTermMemoryNode(
+            LongTermMemoryStore(
+                os.getenv(
+                    "LONG_TERM_MEMORY_PATH",
+                    os.path.join(day06_path, "memory", "long_term_memory.json")
+                )
+            ),
+            unity_project_path,
         )
 
         self.project_understanding = ProjectUnderstandingNode(
@@ -174,7 +186,20 @@ class AgentWorkflow:
 
 
     def project_understanding_node(self,state):
-        return self.project_understanding.run(state)
+        result = self.project_understanding.run(state)
+        merged_state = {**state, **result}
+        return {**result, **self.long_term_memory.update_project(merged_state)}
+
+
+    def unity_compiler_node(self, state):
+        result = unity_compile_agent(state)
+        return {**result, **self.long_term_memory.observe_compile(result)}
+
+
+    def unity_test_node(self, state):
+        result = unity_test_agent(state)
+        merged_state = {**state, **result}
+        return {**result, **self.long_term_memory.observe_test(merged_state)}
 
 
     def project_understanding_router(self,state):
@@ -405,12 +430,12 @@ class AgentWorkflow:
 
         self.workflow.add_node(
             "unity_compiler",
-            unity_compile_agent
+            self.unity_compiler_node
         )
 
         self.workflow.add_node(
             "unity_test",
-            unity_test_agent
+            self.unity_test_node
         )
 
 

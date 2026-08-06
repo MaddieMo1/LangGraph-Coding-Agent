@@ -109,7 +109,8 @@ class RepairAgent:
 
         result = self.route_fix(
             root_causes,
-            issues
+            issues,
+            state.get("memory_context", {})
         )
 
 
@@ -177,7 +178,8 @@ class RepairAgent:
     def route_fix(
         self,
         root_causes,
-        issues
+        issues,
+        memory_context=None
     ):
         """
         根据Root Cause选择修复策略
@@ -250,7 +252,8 @@ class RepairAgent:
                 actions.append(
                     self.llm_repair(
                         root,
-                        issues
+                        issues,
+                        memory_context
                     )
                 )
 
@@ -268,7 +271,8 @@ class RepairAgent:
     def llm_repair(
         self,
         root,
-        issues
+        issues,
+        memory_context=None
     ):
         """
         调用DeepSeek处理复杂修复
@@ -371,7 +375,8 @@ class RepairAgent:
         prompt = repair_prompt(
             context,
             issues,
-            strategy
+            strategy,
+            memory_context
         )
 
 
