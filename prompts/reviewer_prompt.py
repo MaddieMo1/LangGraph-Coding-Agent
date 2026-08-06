@@ -8,7 +8,8 @@ def get_reviewer_prompt(
     code_check_result,
     compile_result,
     architecture,
-    repair_history
+    repair_history,
+    test_result=None
 ):
     """
     获取代码审查Agent提示词
@@ -476,6 +477,13 @@ Unity Compiler结果
 
 
 {compile_result}
+
+
+=========================
+Unity Test Framework结果
+=========================
+
+{test_result or {}}
 
 
 

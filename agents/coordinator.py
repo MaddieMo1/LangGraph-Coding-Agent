@@ -39,6 +39,7 @@ class CoordinatorAgent:
             "architecture",
             "file_planner",
             "coder",
+            "test_generator",
             "code_checker",
             "reviewer"
         ]

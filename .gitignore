@@ -33,6 +33,7 @@ env/
 # =========================
 generated/*
 !generated/.gitkeep
+generated_tests/
 memory/project_context.json
 memory/dependency_graph.json
 memory/patch_history.json

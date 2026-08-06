@@ -56,6 +56,16 @@ def review_router(state):
         False
     )
 
+    test_result = state.get(
+        "test_result",
+        {}
+    )
+
+    test_success = test_result.get(
+        "success",
+        False
+    )
+
     repair_count = state.get(
         "repair_count",
         0
@@ -163,6 +173,22 @@ def review_router(state):
     # 架构问题检测
     # =========================
 
+    if (
+        test_result
+        and
+        not test_success
+        and
+        not test_result.get("system_error", False)
+    ):
+
+        if repair_count < 3:
+            print("[Review Router]Unity测试失败，进入代码修复")
+            return "repair"
+
+        print("[Review Router]Unity测试失败且已达到最大修复次数")
+        return "finish_task"
+
+
     architecture_keywords = [
         "职责重叠",
         "重复定义",
@@ -223,6 +249,8 @@ def review_router(state):
         code_check_success
         and
         compile_success
+        and
+        test_success
     ):
 
         print(

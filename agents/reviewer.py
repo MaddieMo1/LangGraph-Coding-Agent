@@ -60,6 +60,11 @@ class ReviewerAgent:
             {}
         )
 
+        test_result = state.get(
+            "test_result",
+            {}
+        )
+
 
         prompt = get_reviewer_prompt(
             code,
@@ -72,7 +77,8 @@ class ReviewerAgent:
             state.get(
                 "repair_history",
                 []
-            )
+            ),
+            test_result
         )
 
 
@@ -352,6 +358,11 @@ class ReviewerAgent:
             root_causes
         )
 
+        review = self.validate_test_result(
+            review,
+            test_result
+        )
+
 
         invalid_review = any(
             issue.get(
@@ -431,6 +442,48 @@ class ReviewerAgent:
                 "Reviewer Agent完成"
             ]
         }
+
+
+    def validate_test_result(self, review, test_result):
+        """Merge authoritative Unity assertion failures into the review."""
+
+        if not test_result or test_result.get("system_error", False):
+            return review
+
+        if test_result.get("success", False):
+            review["remaining_issues"] = [
+                issue
+                for issue in review.get("remaining_issues", [])
+                if issue.get("type") != "test_failure"
+            ]
+            return review
+
+        review["pass"] = False
+        review["score"] = min(review.get("score", 0), 80)
+        existing_tests = {
+            issue.get("test", "")
+            for issue in review.get("remaining_issues", [])
+            if issue.get("type") == "test_failure"
+        }
+        for error in test_result.get("errors", []):
+            test_name = error.get("test", "")
+            if test_name in existing_tests:
+                continue
+            review.setdefault("remaining_issues", []).append(
+                {
+                    "type": "test_failure",
+                    "test": test_name,
+                    "file": (
+                        test_name.split(".")[0] + ".cs"
+                        if test_name
+                        else "generated_tests"
+                    ),
+                    "problem": error.get("message", "Unity test failed"),
+                    "suggestion": "根据失败断言检查生产代码或测试预期",
+                    "severity": "high",
+                }
+            )
+        return review
 
 
     def parse_review(self, content):

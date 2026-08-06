@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.4.0-success" alt="版本 v0.4.0">
+  <img src="https://img.shields.io/badge/Version-v0.5.0-success" alt="版本 v0.5.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -30,7 +30,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## ✨ Day08 已实现能力
+## ✨ Day09 已实现能力
 
 - 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
 - Diff Patch：生成 Git 风格差异、校验源文件哈希、记录补丁历史并支持安全撤销。
@@ -38,6 +38,9 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Dependency Graph：建立项目内类型依赖图，支持直接依赖、反向依赖和传递依赖查询。
 - Architecture 与 File Planner 会读取工程上下文和依赖图，优先复用已有类型并评估修改影响范围。
 - 项目上下文和依赖图使用版本化 JSON 协议，可供后续长期记忆和测试阶段复用。
+- Test Generator 通过安全 Tool 将结构化 EditMode 测试写入独立目录。
+- Unity Test Tool 在临时沙箱工程中运行 NUnit 测试，真实 Unity 工程可以保持打开。
+- 测试 XML 报告进入 Reviewer；断言失败进入修复循环，测试基础设施错误安全停止。
 
 ### Day06-4 编译修复闭环
 
@@ -93,10 +96,14 @@ flowchart TD
     C --> D[架构验证]
     D --> E[文件规划]
     E --> F[代码生成]
-    F --> G[静态检查]
+    F --> T[EditMode 测试生成]
+    T --> G[静态检查]
     G --> H[Unity 编译]
     H -->|系统错误| Z[以失败状态结束]
-    H -->|编译结果| I[代码审核]
+    H -->|编译通过| U[隔离 Unity 测试]
+    H -->|编译失败| I[代码审核]
+    U -->|运行器错误| Z
+    U -->|测试结果| I
     I -->|严格通过| J[完成任务]
     I -->|编译或代码问题| K[代码修复]
     I -->|架构问题| C
@@ -138,6 +145,8 @@ LangGraph-Coding-Agent/
 │   ├── file_planner.py
 │   ├── repair.py
 │   ├── reviewer.py
+│   ├── test_generator.py
+│   ├── unity_test.py
 │   └── unity_compiler.py
 ├── memory/
 │   ├── dependency_graph.py
@@ -146,7 +155,8 @@ LangGraph-Coding-Agent/
 │   └── state.py
 ├── prompts/
 │   ├── repair_prompt.py
-│   └── reviewer_prompt.py
+│   ├── reviewer_prompt.py
+│   └── test_generator_prompt.py
 ├── tools/
 │   ├── code_check_tool.py
 │   ├── dependency_graph.py
@@ -154,6 +164,8 @@ LangGraph-Coding-Agent/
 │   ├── file_manager.py
 │   ├── project_scanner.py
 │   ├── repair_tool.py
+│   ├── test_generation_tool.py
+│   ├── unity_test_tool.py
 │   └── unity_compile_tool.py
 ├── workflow/
 │   ├── graph.py
@@ -245,11 +257,18 @@ python main.py
 - 直接、反向和传递依赖查询；
 - Architecture 与 File Planner 工程上下文注入。
 
-### 🚧 下一阶段（Day09）
+### ✅ v0.5.0 — 已完成（Day09）
 
-- Test Agent；
-- Unity 单元测试与集成测试生成；
-- Coder → Test Generator → Unity Test → Compile → Report 流程。
+- 安全 EditMode 测试生成；
+- 隔离 Unity 沙箱执行；
+- NUnit XML 结构化报告；
+- 编译、测试、审核联合通过门槛。
+
+### 🚧 下一阶段（Day10）
+
+- 长期 Memory Agent；
+- 项目记忆、编码风格和缺陷历史；
+- 跨任务记忆检索与更新。
 
 ### 🔭 后续计划
 

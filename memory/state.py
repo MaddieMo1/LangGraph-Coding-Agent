@@ -76,6 +76,8 @@ class AgentState(TypedDict):
 
     # Coder生成代码
     code: List[Dict[str, Any]]
+    generated_tests: List[Dict[str, Any]]
+    test_generation_result: Dict[str, Any]
 
 
     # =========================
@@ -120,6 +122,8 @@ class AgentState(TypedDict):
 
     # Unity Compiler历史记录
     compile_history: List[Dict[str, Any]]
+    test_result: Dict[str, Any]
+    test_history: List[Dict[str, Any]]
 
 
     # =========================

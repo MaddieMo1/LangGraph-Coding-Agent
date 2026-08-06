@@ -14,10 +14,12 @@ from agents.architecture import ArchitectureAgent
 from agents.architecture_validator import ArchitectureValidator
 from agents.file_planner import FilePlannerAgent
 from agents.coder import CoderAgent
+from agents.test_generator import TestGeneratorAgent
 from agents.code_checker import CodeCheckerAgent
 from agents.reviewer import ReviewerAgent
 from agents.repair import RepairAgent
 from agents.unity_compiler import unity_compile_agent
+from agents.unity_test import unity_test_agent
 from workflow.router import router
 from workflow.review_router import review_router
 from workflow.task import finish_task
@@ -32,6 +34,7 @@ from tools.dependency_graph import DependencyGraphBuilder
 from tools.file_manager import FileManager
 from tools.project_scanner import UnityProjectScanner
 from tools.repair_tool import RepairTool
+from tools.test_generation_tool import TestGenerationTool
 
 
 class AgentWorkflow:
@@ -75,6 +78,13 @@ class AgentWorkflow:
         day06_path = os.path.dirname(
             os.path.dirname(
                 os.path.abspath(__file__)
+            )
+        )
+
+        self.test_generator = TestGeneratorAgent(
+            self.llm,
+            TestGenerationTool(
+                os.path.join(day06_path, "generated_tests")
             )
         )
 
@@ -227,6 +237,16 @@ class AgentWorkflow:
         )
 
 
+    def test_generator_node(self,state):
+        return self.test_generator.run(state)
+
+
+    def test_generator_router(self,state):
+        if not state.get("test_generation_result", {}).get("success", False):
+            return "finish_task"
+        return router(state)
+
+
     def reviewer_node(self,state):
         """
         代码审核节点
@@ -270,6 +290,16 @@ class AgentWorkflow:
             return "finish_task"
 
 
+        if compile_result.get("success", False):
+            return "unity_test"
+
+        return "reviewer"
+
+
+    def unity_test_router(self,state):
+        test_result = state.get("test_result", {})
+        if test_result.get("system_error", False):
+            return "finish_task"
         return "reviewer"
 
 
@@ -349,6 +379,11 @@ class AgentWorkflow:
         )
 
         self.workflow.add_node(
+            "test_generator",
+            self.test_generator_node
+        )
+
+        self.workflow.add_node(
             "reviewer",
             self.reviewer_node
         )
@@ -373,6 +408,11 @@ class AgentWorkflow:
             unity_compile_agent
         )
 
+        self.workflow.add_node(
+            "unity_test",
+            unity_test_agent
+        )
+
 
         self.workflow.set_entry_point(
             "coordinator"
@@ -388,6 +428,7 @@ class AgentWorkflow:
                 "architecture":"architecture",
                 "file_planner":"file_planner",
                 "coder":"coder",
+                "test_generator":"test_generator",
                 "code_checker":"code_checker",
                 "reviewer":"reviewer",
                 "finish_task":"finish_task"
@@ -442,6 +483,18 @@ class AgentWorkflow:
             router,
             {
                 "coder":"coder",
+                "test_generator":"test_generator",
+                "code_checker":"code_checker",
+                "finish_task":"finish_task"
+            }
+        )
+
+
+        # Test Generator
+        self.workflow.add_conditional_edges(
+            "test_generator",
+            self.test_generator_router,
+            {
                 "code_checker":"code_checker",
                 "finish_task":"finish_task"
             }
@@ -458,6 +511,18 @@ class AgentWorkflow:
         self.workflow.add_conditional_edges(
             "unity_compiler",
             self.unity_compiler_router,
+            {
+                "unity_test":"unity_test",
+                "reviewer":"reviewer",
+                "finish_task":"finish_task"
+            }
+        )
+
+
+        # Unity Test
+        self.workflow.add_conditional_edges(
+            "unity_test",
+            self.unity_test_router,
             {
                 "reviewer":"reviewer",
                 "finish_task":"finish_task"
