@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 
 
 class UnityCompileTool:
@@ -227,7 +228,11 @@ class UnityCompileTool:
 
         log_path = os.path.join(
             log_directory,
-            "coding-agent-compile.log"
+            (
+                "coding-agent-compile-"
+                + uuid.uuid4().hex
+                + ".log"
+            )
         )
 
 

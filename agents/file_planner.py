@@ -185,7 +185,9 @@ class FilePlannerAgent:
 
         prompt = get_file_planner_prompt(
             state.get("query",""),
-            architecture
+            architecture,
+            state.get("project_context", {}),
+            state.get("dependency_graph", {})
         )
         
         response = self.llm.invoke(

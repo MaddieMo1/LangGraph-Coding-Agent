@@ -1,4 +1,15 @@
-def get_file_planner_prompt(query, architecture):
+import json
+
+from memory.project_context import build_prompt_context
+from memory.dependency_graph import build_prompt_graph
+
+
+def get_file_planner_prompt(
+    query,
+    architecture,
+    project_context=None,
+    dependency_graph=None
+):
     """
     生成文件规划Prompt
 
@@ -13,6 +24,17 @@ def get_file_planner_prompt(query, architecture):
         文件规划Prompt
     """
 
+    context_json = json.dumps(
+        build_prompt_context(project_context or {}),
+        ensure_ascii=False,
+        indent=2
+    )
+    graph_json = json.dumps(
+        build_prompt_graph(dependency_graph or {}),
+        ensure_ascii=False,
+        indent=2
+    )
+
     return f"""
 你是一名Unity高级架构师。
 
@@ -24,6 +46,16 @@ def get_file_planner_prompt(query, architecture):
 系统架构:
 
 {architecture}
+
+
+当前 Unity 工程上下文（规划前检查已有文件、类型和命名空间）:
+
+{context_json}
+
+
+当前工程依赖图（规划修改范围时检查直接与传递依赖）:
+
+{graph_json}
 
 
 请根据架构设计生成代码文件列表。

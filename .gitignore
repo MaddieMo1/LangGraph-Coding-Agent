@@ -33,6 +33,9 @@ env/
 # =========================
 generated/*
 !generated/.gitkeep
+memory/project_context.json
+memory/dependency_graph.json
+memory/patch_history.json
 
 # =========================
 # Model Files

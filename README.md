@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.2.0-success" alt="版本 v0.2.0">
+  <img src="https://img.shields.io/badge/Version-v0.4.0-success" alt="版本 v0.4.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -30,7 +30,16 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## ✨ Day06-4 已实现能力
+## ✨ Day08 已实现能力
+
+- 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
+- Diff Patch：生成 Git 风格差异、校验源文件哈希、记录补丁历史并支持安全撤销。
+- Project Understanding：扫描真实 Unity 工程的 Assets、脚本、模块、Scene、Prefab、类型声明和 GUID 引用。
+- Dependency Graph：建立项目内类型依赖图，支持直接依赖、反向依赖和传递依赖查询。
+- Architecture 与 File Planner 会读取工程上下文和依赖图，优先复用已有类型并评估修改影响范围。
+- 项目上下文和依赖图使用版本化 JSON 协议，可供后续长期记忆和测试阶段复用。
+
+### Day06-4 编译修复闭环
 
 - 在独立测试工程中执行真实 Unity BatchMode 编译。
 - 结构化解析并去重 C# 编译错误。
@@ -79,7 +88,8 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 ```mermaid
 flowchart TD
     A[用户需求] --> B[需求协调]
-    B --> C[架构设计]
+    B --> P[工程理解与依赖图]
+    P --> C[架构设计]
     C --> D[架构验证]
     D --> E[文件规划]
     E --> F[代码生成]
@@ -130,19 +140,29 @@ LangGraph-Coding-Agent/
 │   ├── reviewer.py
 │   └── unity_compiler.py
 ├── memory/
+│   ├── dependency_graph.py
+│   ├── patch_history.py
+│   ├── project_context.py
 │   └── state.py
 ├── prompts/
 │   ├── repair_prompt.py
 │   └── reviewer_prompt.py
 ├── tools/
 │   ├── code_check_tool.py
+│   ├── dependency_graph.py
+│   ├── diff_tool.py
 │   ├── file_manager.py
+│   ├── project_scanner.py
+│   ├── repair_tool.py
 │   └── unity_compile_tool.py
 ├── workflow/
 │   ├── graph.py
+│   ├── project_understanding.py
 │   ├── review_router.py
 │   ├── router.py
 │   └── task.py
+├── tests/
+├── docs/
 ├── main.py
 ├── requirements.txt
 ├── CONTRIBUTING.md
@@ -211,16 +231,29 @@ python main.py
 - 严格通过条件与有限路由；
 - 真实编译—修复—验证闭环。
 
-### 🚧 v0.3.0 — 下一阶段（Day06-5）
+### ✅ v0.3.0 — 已完成（Day06-5 / Day06-6）
 
 - 工程化 Repair Tool；
 - 使用精准补丁替代 Agent 直接写文件；
-- 补丁历史与验证元数据。
+- 补丁历史、版本比较和安全撤销。
+
+### ✅ v0.4.0 — 已完成（Day07 / Day08）
+
+- Unity 工程确定性扫描；
+- 版本化 `project_context.json`；
+- 项目内类型依赖图；
+- 直接、反向和传递依赖查询；
+- Architecture 与 File Planner 工程上下文注入。
+
+### 🚧 下一阶段（Day09）
+
+- Test Agent；
+- Unity 单元测试与集成测试生成；
+- Coder → Test Generator → Unity Test → Compile → Report 流程。
 
 ### 🔭 后续计划
 
 - Unity API 知识检索；
-- 项目级代码理解；
 - 长期记忆；
 - 人工审批工作流；
 - 隔离执行沙箱。

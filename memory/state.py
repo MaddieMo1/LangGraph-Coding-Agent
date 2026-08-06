@@ -40,6 +40,19 @@ class AgentState(TypedDict):
     # RAG上下文
     context: List[str]
 
+    # =========================
+    # Project Understanding
+    # =========================
+
+    project_context: Dict[str, Any]
+    project_context_path: str
+    project_context_status: str
+    project_context_error: str
+    dependency_graph: Dict[str, Any]
+    dependency_graph_path: str
+    dependency_graph_status: str
+    dependency_graph_error: str
+
 
     # =========================
     # Architecture

@@ -35,6 +35,7 @@ class CoordinatorAgent:
 
 
         tasks = [
+            "project_understanding",
             "architecture",
             "file_planner",
             "coder",

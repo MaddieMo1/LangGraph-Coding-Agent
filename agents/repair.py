@@ -1,10 +1,7 @@
 # =========================
 # Repair Agent
 # =========================
-import re
-
 from prompts.repair_prompt import repair_prompt
-from utils.code_extract import extract_code
 
 
 class RepairAgent:
@@ -21,7 +18,7 @@ class RepairAgent:
     def __init__(
         self,
         llm,
-        file_manager
+        repair_tool
     ):
         """
         初始化Repair Agent
@@ -30,12 +27,12 @@ class RepairAgent:
             llm:
                 DeepSeek模型
 
-            file_manager:
-                文件管理工具
+            repair_tool:
+                工程化文件修复工具
         """
 
         self.llm = llm
-        self.file_manager = file_manager
+        self.repair_tool = repair_tool
 
 
     def run(
@@ -116,10 +113,47 @@ class RepairAgent:
         )
 
 
+        actions = result.get(
+            "actions",
+            []
+        )
+
+
+        successful_actions = [
+            action
+            for action in actions
+            if action.get(
+                "success",
+                False
+            )
+        ]
+
+
+        if actions and len(successful_actions) == len(actions):
+            repair_status = "success"
+        elif successful_actions:
+            repair_status = "partial"
+        else:
+            repair_status = "failed"
+
+
+        repair_record = {
+            "round": repair_round,
+            "status": repair_status,
+            "actions": actions
+        }
+
+
         return {
 
             "repair_count":
             repair_round,
+
+            "repair_status":
+            repair_status,
+
+            "repair_result":
+            repair_record,
 
             "repair_history":
             state.get(
@@ -128,7 +162,7 @@ class RepairAgent:
             )
             +
             [
-                result
+                repair_record
             ],
 
             "current_agent":
@@ -183,35 +217,31 @@ class RepairAgent:
 
             if operation=="add_using":
 
-                success = self.fix_add_using(
-                    root
+                file_name = (
+                    action.get(
+                        "target",
+                        ""
+                    )
+                    or
+                    root.get(
+                        "target_file",
+                        root.get(
+                            "file",
+                            ""
+                        )
+                    )
+                )
+
+                namespace = action.get(
+                    "namespace",
+                    ""
                 )
 
                 actions.append(
-                    {
-                        "type":
-                        "add_using",
-
-                        "success":
-                        success
-                    }
-                )
-
-
-            elif operation=="modify_namespace":
-
-                success = self.fix_namespace(
-                    root
-                )
-
-                actions.append(
-                    {
-                        "type":
-                        "namespace",
-
-                        "success":
-                        success
-                    }
+                    self.repair_tool.add_using(
+                        file_name,
+                        namespace
+                    )
                 )
 
 
@@ -226,146 +256,9 @@ class RepairAgent:
 
 
         return {
-            "round":
-            len(actions),
-
             "actions":
             actions
         }
-
-
-    # =========================
-    # 自动添加using
-    # =========================
-
-    def fix_add_using(
-        self,
-        root
-    ):
-        """
-        自动添加using引用
-
-        Args:
-            root:
-                Root Cause
-
-        Returns:
-            是否成功
-        """
-
-        file_name = root.get(
-            "target_file",
-            root.get(
-                "file",
-                ""
-            )
-        )
-
-
-        namespace = root.get(
-            "fix_action",
-            {}
-        ).get(
-            "namespace",
-            ""
-        )
-
-
-        if not file_name or not namespace:
-
-            return False
-
-
-        path = (
-            "generated/"
-            +
-            file_name
-        )
-
-
-        code = self.file_manager.read_file(
-            path
-        )
-
-
-        if not code:
-
-            return False
-
-
-        using_line = (
-            f"using {namespace};"
-        )
-
-
-        if re.search(
-            rf"using\s+{namespace};",
-            code
-        ):
-            return True
-
-        code_lines = code.splitlines()
-
-
-        insert_index=0
-
-
-        for index,line in enumerate(code_lines):
-
-            if line.startswith(
-                "using "
-            ):
-
-                insert_index=index+1
-
-
-        code_lines.insert(
-            insert_index,
-            using_line
-        )
-
-
-        new_code="\n".join(
-            code_lines
-        )
-
-
-        self.file_manager.write_file(
-            path,
-            new_code
-        )
-
-
-        print(
-            f"[Repair Agent]自动添加using:{namespace}"
-        )
-
-
-        return True
-
-
-
-    # =========================
-    # Namespace修复
-    # =========================
-
-    def fix_namespace(
-        self,
-        root
-    ):
-        """
-        修复namespace问题
-
-        Args:
-            root:
-                Root Cause
-
-        Returns:
-            是否成功
-        """
-
-        return False
-
 
 
     # =========================
@@ -418,18 +311,67 @@ class RepairAgent:
         )
 
 
-        context = self.collect_context(
-            files
+        action = root.get(
+            "fix_action",
+            {}
+        )
+
+
+        target_file = (
+            action.get(
+                "target",
+                ""
+            )
+            or
+            root.get(
+                "target_file",
+                root.get(
+                    "file",
+                    ""
+                )
+            )
+        )
+
+
+        if target_file and target_file not in files:
+            files.append(target_file)
+
+
+        try:
+            context = self.repair_tool.collect_context(
+                files
+            )
+        except (OSError, ValueError) as error:
+            return {
+                "type": "llm",
+                "success": False,
+                "changed": False,
+                "files": [],
+                "error": str(error),
+                "root": root
+            }
+
+
+        strategy = (
+            root.get(
+                "fix_strategy",
+                ""
+            )
+            or
+            action.get(
+                "details",
+                root.get(
+                    "description",
+                    ""
+                )
+            )
         )
 
 
         prompt = repair_prompt(
             context,
             issues,
-            root.get(
-                "fix_strategy",
-                ""
-            )
+            strategy
         )
 
 
@@ -448,172 +390,13 @@ class RepairAgent:
         )
 
 
-        written_files = self.write_llm_result(
-            content
+        tool_result = self.repair_tool.apply_llm_result(
+            content,
+            target_file
         )
-
-
-        target_file = root.get(
-            "fix_action",
-            {}
-        ).get(
-            "target",
-            ""
-        )
-
-
-        if not target_file:
-
-            target_file = root.get(
-                "target_file",
-                root.get(
-                    "file",
-                    ""
-                )
-            )
-
-
-        if not written_files and target_file:
-
-            target_file = target_file.replace(
-                "\\",
-                "/"
-            ).split(
-                "/"
-            )[-1]
-
-
-            code = extract_code(
-                content
-            )
-
-
-            if code:
-
-                self.file_manager.write_file(
-                    "generated/"
-                    +
-                    target_file,
-                    code
-                )
-
-
-                written_files.append(
-                    target_file
-                )
-
-
-                print(
-                    f"[Repair Agent]写入:{target_file}"
-                )
 
 
         return {
-
-            "type":
-            "llm",
-
-            "success":
-            bool(
-                written_files
-            ),
-
-            "files":
-            written_files,
-
-            "root":
-            root
+            **tool_result,
+            "root": root
         }
-
-
-
-    # =========================
-    # Context Expansion
-    # =========================
-
-    def collect_context(
-        self,
-        files
-    ):
-        """
-        收集修复上下文
-        """
-
-        context=""
-
-
-        for file in files:
-
-            path = (
-                "generated/"
-                +
-                file
-            )
-
-            code = self.file_manager.read_file(
-                path
-            )
-
-
-            context += (
-                "\nFILE:"
-                +
-                file
-                +
-                "\n"
-                +
-                code
-            )
-
-
-        return context
-
-
-
-    def write_llm_result(
-        self,
-        content
-    ):
-        """
-        写入LLM多文件结果
-        """
-
-        matches = re.findall(
-            r"FILE:(.*?)\r?\nCODE_START\r?\n(.*?)CODE_END",
-            content,
-            re.S
-        )
-
-
-        written_files = []
-
-
-        for name,code in matches:
-
-            file_name = name.strip().replace(
-                "\\",
-                "/"
-            ).split(
-                "/"
-            )[-1]
-
-
-            self.file_manager.write_file(
-                "generated/"
-                +
-                file_name,
-                code.strip()
-            )
-
-
-            written_files.append(
-                file_name
-            )
-
-
-            print(
-                f"[Repair Agent]写入:{file_name}"
-            )
-
-
-        return written_files

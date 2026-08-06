@@ -43,7 +43,9 @@ class ArchitectureAgent:
         query = state["query"]
 
         prompt = get_architecture_prompt(
-            query
+            query,
+            state.get("project_context", {}),
+            state.get("dependency_graph", {})
         )
 
         result = self.llm.invoke(

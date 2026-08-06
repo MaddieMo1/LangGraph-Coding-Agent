@@ -1,9 +1,13 @@
 # =========================
 # Architecture Prompt
 # =========================
+import json
+
+from memory.project_context import build_prompt_context
+from memory.dependency_graph import build_prompt_graph
 
 
-def get_architecture_prompt(query):
+def get_architecture_prompt(query, project_context=None, dependency_graph=None):
     """
     生成架构设计Prompt
 
@@ -15,6 +19,17 @@ def get_architecture_prompt(query):
         架构设计提示词
     """
 
+    context_json = json.dumps(
+        build_prompt_context(project_context or {}),
+        ensure_ascii=False,
+        indent=2
+    )
+    graph_json = json.dumps(
+        build_prompt_graph(dependency_graph or {}),
+        ensure_ascii=False,
+        indent=2
+    )
+
     return f"""
 你是一名资深Unity游戏架构师。
 
@@ -23,6 +38,16 @@ def get_architecture_prompt(query):
 用户需求:
 
 {query}
+
+
+当前 Unity 工程上下文（必须复用已有类型与命名空间，避免重复定义）:
+
+{context_json}
+
+
+当前工程依赖图（边方向为使用者指向被依赖者）:
+
+{graph_json}
 
 
 请输出：

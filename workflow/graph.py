@@ -3,6 +3,8 @@
 # LangGraph工作流
 # =========================
 
+import os
+
 from langgraph.graph import StateGraph, END
 
 from memory.state import AgentState
@@ -19,9 +21,17 @@ from agents.unity_compiler import unity_compile_agent
 from workflow.router import router
 from workflow.review_router import review_router
 from workflow.task import finish_task
+from workflow.project_understanding import ProjectUnderstandingNode
 
 from llm.deepseek import DeepSeekLLM
+from memory.patch_history import PatchHistory
+from memory.project_context import ProjectContextStore
+from memory.dependency_graph import DependencyGraphStore
+from tools.diff_tool import DiffTool
+from tools.dependency_graph import DependencyGraphBuilder
 from tools.file_manager import FileManager
+from tools.project_scanner import UnityProjectScanner
+from tools.repair_tool import RepairTool
 
 
 class AgentWorkflow:
@@ -62,9 +72,65 @@ class AgentWorkflow:
 
         self.file_manager = FileManager()
 
+        day06_path = os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__)
+            )
+        )
+
+        unity_project_path = os.getenv(
+            "UNITY_TEST_PROJECT_PATH",
+            r"D:\Unity\Unity_Project\CodingAgentTest"
+        )
+
+        self.project_understanding = ProjectUnderstandingNode(
+            UnityProjectScanner(unity_project_path),
+            ProjectContextStore(
+                os.path.join(
+                    day06_path,
+                    "memory",
+                    "project_context.json"
+                )
+            ),
+            DependencyGraphBuilder(),
+            DependencyGraphStore(
+                os.path.join(
+                    day06_path,
+                    "memory",
+                    "dependency_graph.json"
+                )
+            ),
+        )
+
+        generated_path = os.path.join(
+            day06_path,
+            "generated"
+        )
+
+        self.diff_tool = DiffTool(
+            self.file_manager,
+            generated_path
+        )
+
+        self.patch_history = PatchHistory(
+            os.path.join(
+                day06_path,
+                "memory",
+                "patch_history.json"
+            ),
+            self.diff_tool
+        )
+
+        self.repair_tool = RepairTool(
+            self.file_manager,
+            generated_path,
+            self.diff_tool,
+            self.patch_history
+        )
+
         self.repair = RepairAgent(
             self.llm,
-            self.file_manager
+            self.repair_tool
         )
 
         self.workflow = StateGraph(
@@ -95,6 +161,19 @@ class AgentWorkflow:
         return self.architecture.run(
             state
         )
+
+
+    def project_understanding_node(self,state):
+        return self.project_understanding.run(state)
+
+
+    def project_understanding_router(self,state):
+        if (
+            state.get("project_context_status") != "success"
+            or state.get("dependency_graph_status") != "success"
+        ):
+            return "finish_task"
+        return router(state)
 
 
     def architecture_validator_node(self,state):
@@ -240,6 +319,11 @@ class AgentWorkflow:
         )
 
         self.workflow.add_node(
+            "project_understanding",
+            self.project_understanding_node
+        )
+
+        self.workflow.add_node(
             "architecture",
             self.architecture_node
         )
@@ -300,11 +384,23 @@ class AgentWorkflow:
             "coordinator",
             router,
             {
+                "project_understanding":"project_understanding",
                 "architecture":"architecture",
                 "file_planner":"file_planner",
                 "coder":"coder",
                 "code_checker":"code_checker",
                 "reviewer":"reviewer",
+                "finish_task":"finish_task"
+            }
+        )
+
+
+        # Project Understanding
+        self.workflow.add_conditional_edges(
+            "project_understanding",
+            self.project_understanding_router,
+            {
+                "architecture":"architecture",
                 "finish_task":"finish_task"
             }
         )
