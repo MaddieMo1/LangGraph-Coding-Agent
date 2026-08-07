@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.7.0-success" alt="版本 v0.7.0">
+  <img src="https://img.shields.io/badge/Version-v0.8.0-success" alt="版本 v0.8.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -37,7 +37,10 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - SQLite 持久化工作流检查点，进程重启后仍可恢复待审批任务。
 - 默认整批批准或拒绝；高级模式支持逐文件选择，批准子集仍原子应用。
 - 应用前校验路径、扩展名、源文件哈希和补丁内容；冲突时不写入。
-- Gradio 本地 UI 展示逐文件 Diff、审批状态和可恢复的 thread ID。
+- SQLite 自动列出最近任务，可直接选择并恢复，无需手动记录 thread ID。
+- LangGraph 节点状态实时流式更新，任务执行期间可查看当前节点和历史进度。
+- Neural Control Deck 深色审批界面支持逐文件 Diff、文件选择、变更统计和固定审批操作栏。
+- 页面使用浏览器原生滚动，并适配桌面、平板和移动端；粒子动效遵循 `prefers-reduced-motion`。
 
 - 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
 - Diff Patch：生成 Git 风格差异、校验源文件哈希、记录补丁历史并支持安全撤销。
@@ -130,6 +133,14 @@ flowchart TD
 
 ## 📸 运行效果
 
+### 🧠 Day11 Neural Control Deck
+
+<p align="center">
+  <img src="./docs/design-references/day11-neural-control-deck-implementation.png" alt="Day11 人工审批 Neural Control Deck" width="900" />
+</p>
+
+界面将任务阶段、实时节点、变更文件、统一 Diff、提案信息和审批操作集中在同一个工作台中。历史任务从 SQLite 检查点自动发现，页面刷新或进程重启后仍可恢复待审批流程。
+
 ### 🧭 多智能体工作流
 
 <p align="center">
@@ -187,10 +198,14 @@ LangGraph-Coding-Agent/
 │   ├── graph.py
 │   ├── project_understanding.py
 │   ├── review_router.py
+│   ├── runtime.py
 │   ├── router.py
 │   └── task.py
+├── ui/
+│   └── approval_app.py
 ├── tests/
 ├── docs/
+├── app.py
 ├── main.py
 ├── requirements.txt
 ├── CONTRIBUTING.md
@@ -228,7 +243,7 @@ Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSett
 python app.py
 ```
 
-Gradio 仅监听 `127.0.0.1`，不会自动创建公共分享链接。默认检查点位于 `memory/workflow_checkpoints.sqlite`；刷新或重启后，可使用界面显示的 thread ID 恢复待审批任务。
+Gradio 仅监听 `127.0.0.1`，不会自动创建公共分享链接。默认检查点位于 `memory/workflow_checkpoints.sqlite`；刷新或重启后，可在“恢复已有任务”中直接选择 SQLite 保存的任务。
 
 运行命令行示例：
 
@@ -305,11 +320,21 @@ python main.py
 - 默认整批审批，高级模式逐文件选择；
 - 冲突检测、原子应用、补偿回滚和幂等决策。
 
+### ✅ v0.8.0 — 已完成（Day11 UI / 交互重构）
+
+- Neural Control Deck 科技简约深色界面；
+- 历史任务自动发现与选择恢复；
+- LangGraph 节点执行进度实时展示；
+- 文件选中、禁用、加载和审批状态的完整深色主题；
+- 浏览器原生页面滚动与固定审批操作栏；
+- 桌面、平板、移动端响应式布局与减少动态效果支持。
+
 ### 🔭 后续计划
 
 - Unity API 知识检索；
-- 人工审批工作流；
-- 隔离执行沙箱。
+- 审批审计记录与权限控制；
+- 团队协作与远程任务观察；
+- 更完整的 Unity 隔离执行与验证环境。
 
 ## 🤝 参与贡献
 

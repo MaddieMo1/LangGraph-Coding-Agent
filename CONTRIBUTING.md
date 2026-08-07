@@ -38,12 +38,17 @@ docs/xxx
 </p>
 
 ```text
-静态检查
+补丁提案
+→ 人工审批
+→ 静态检查
 → Unity 编译
 → 代码审核
 → 代码修复
-→ 静态检查
+→ 修复提案
+→ 人工审批
 ```
+
+Coder 和 Repair 不得绕过审批直接写入生产 C# 文件。审批恢复必须复用原 thread ID 和 SQLite 检查点；应用变更前必须继续执行路径、扩展名、源文件哈希和补丁内容校验。
 
 ## 🤖 新增或修改智能体
 
@@ -103,6 +108,28 @@ repair_count
 repair_history
 ```
 
+Day11 人工审批相关字段包括：
+
+```text
+approval_status
+approval_request
+approval_result
+current_agent
+agent_history
+```
+
+新增或调整这些字段时，必须同时验证首次执行、流式进度、进程重启恢复、批准、部分批准、拒绝、冲突和重复决策。
+
+## 🎨 UI 与交互贡献
+
+- 保持 Neural Control Deck 的深色表面、青色主操作和红色拒绝状态，不引入 Gradio 默认白底或橙色按钮。
+- 新增控件时必须覆盖默认、悬停、焦点、禁用、选中、加载和错误状态。
+- 审批核心操作必须使用真实组件和可访问标签，不能用装饰性元素模拟按钮、复选框或文件选择。
+- 桌面端使用浏览器原生页面滚动；固定审批栏不得遮挡任务表单、Diff 或恢复任务入口。
+- 动效必须支持 `prefers-reduced-motion`，关闭动效后仍需保留完整功能和信息层级。
+- 至少检查桌面、1024 px 平板和 390 px 移动端布局。
+- 文档只提交最终设计稿、最终实现图和必要的对比图；失败方案、临时标注图和调试截图保留在本地，不进入仓库。
+
 ## 🧪 测试要求
 
 提交前至少完成：
@@ -125,6 +152,14 @@ repair_history
 ```
 
 测试结束后必须清理临时脚本，并确认恢复后的原代码仍能编译。
+
+通用 Python 回归命令：
+
+```bash
+python -m py_compile app.py workflow/runtime.py ui/approval_app.py
+python -m unittest discover -s tests -p "test_*.py"
+git diff --check
+```
 
 <p align="center">
   <img src="./assets/demo_repair_log.png" alt="真实修复闭环运行日志" width="850" />
@@ -160,6 +195,14 @@ chore: 工程维护
 - 环境依赖和已知限制。
 
 对于 Unity 编译相关的合并请求，请注明 Unity 版本、测试工程路径的配置方式，以及编译是否为真实 BatchMode 结果。
+
+## 🚀 发布检查清单（维护者）
+
+1. 确认功能分支测试通过，并仅暂存本次变更文件。
+2. 将功能分支合并到最新 `main`，禁止强制推送共享主分支。
+3. 按语义化版本递增标签，并确认标签指向已推送的 `main` 提交。
+4. 每次正式更新仓库时创建对应 GitHub Release，说明功能变化、兼容性和验证结果。
+5. 发布后检查 Release 为非草稿、非预发布，并确认其显示为最新版本。
 
 ## 📄 许可证
 
