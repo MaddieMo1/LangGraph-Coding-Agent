@@ -1,6 +1,11 @@
 import os
 
-from ui.approval_app import APPROVAL_CSS, ApprovalController, build_approval_app
+from ui.approval_app import (
+    APPROVAL_CSS,
+    APPROVAL_JS,
+    ApprovalController,
+    build_approval_app,
+)
 from workflow.runtime import WorkflowRuntime
 
 
@@ -22,7 +27,12 @@ def main():
     runtime = WorkflowRuntime(database_path).open()
     demo = build_approval_app(ApprovalController(runtime))
     try:
-        demo.launch(server_name="127.0.0.1", share=False, css=APPROVAL_CSS)
+        demo.launch(
+            server_name="127.0.0.1",
+            share=False,
+            css=APPROVAL_CSS,
+            js=APPROVAL_JS,
+        )
     finally:
         runtime.close()
 

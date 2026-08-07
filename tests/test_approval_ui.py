@@ -2,10 +2,16 @@ import unittest
 from types import SimpleNamespace
 
 from ui.approval_app import (
+    APPROVAL_CSS,
     ApprovalController,
     build_approval_app,
+    format_decision_hint,
+    format_proposal_info,
     format_review_meta,
+    format_selection_summary,
     format_status_card,
+    format_task_choices,
+    format_workflow_rail,
     patch_choices,
     select_patch_diff,
 )
@@ -53,6 +59,23 @@ class FakeRuntime:
         self.started_thread_id = thread_id
         return {"__interrupt__": [FakeInterrupt(self.request)]}
 
+    def stream(self, state, thread_id):
+        self.started_state = state
+        self.started_thread_id = thread_id
+        yield {**state, "current_agent": "coordinator", "agent_history": ["Coordinator完成"]}
+        yield {**state, "approval_status": "pending", "approval_request": self.request}
+
+    def list_threads(self):
+        return [
+            {
+                "thread_id": "thread-1",
+                "query": "生成背包系统",
+                "status": "pending",
+                "current_agent": "human_approval",
+                "updated_at": "2026-08-07T00:00:00Z",
+            }
+        ]
+
     def get_state(self, thread_id):
         self.loaded_thread_id = thread_id
         return SimpleNamespace(
@@ -79,6 +102,13 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("pending", view["status"])
         self.assertEqual("生成背包系统", self.runtime.started_state["query"])
         self.assertEqual(["patch-a", "patch-b"], view["selected_patch_ids"])
+
+    def test_start_stream_exposes_running_progress_before_approval(self):
+        views = list(self.controller.start_stream("生成背包系统"))
+
+        self.assertEqual("running", views[0]["status"])
+        self.assertEqual("coordinator", views[1]["current_agent"])
+        self.assertEqual("pending", views[-1]["status"])
 
     def test_reload_pending_thread(self):
         view = self.controller.reload("thread-1")
@@ -157,10 +187,47 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertNotIn("<script>", rendered)
         self.assertIn("&lt;script&gt;", rendered)
 
+    def test_pending_workflow_highlights_review_stage(self):
+        rendered = format_workflow_rail("pending")
+
+        self.assertIn("02", rendered)
+        self.assertIn("审阅变更", rendered)
+        self.assertIn("is-active", rendered)
+
+    def test_proposal_info_summarizes_patch_operations(self):
+        rendered = format_proposal_info("coder", "thread-1", pending_request()["patches"])
+
+        self.assertIn("Coder 初始提案", rendered)
+        self.assertIn("thread-1", rendered)
+        self.assertIn("1 新增", rendered)
+        self.assertIn("1 修改", rendered)
+
+    def test_decision_hint_changes_after_approval(self):
+        self.assertIn("等待你的审批决策", format_decision_hint("pending"))
+        self.assertIn("审批已处理", format_decision_hint("approved"))
+
+    def test_task_history_and_selection_summary_are_human_readable(self):
+        choices = format_task_choices(self.controller.list_tasks())
+
+        self.assertIn("生成背包系统", choices[0][0])
+        self.assertEqual("thread-1", choices[0][1])
+        self.assertIn("2 / 5", format_selection_summary(["a", "b"], 5))
+
     def test_builds_approval_workspace(self):
         app = build_approval_app(self.controller)
 
         self.assertIsNotNone(app)
+
+    def test_page_scrolls_and_drawer_titles_remain_readable(self):
+        self.assertIn('overflow-y: auto', APPROVAL_CSS)
+        self.assertIn('height: auto !important', APPROVAL_CSS)
+        self.assertIn('#new-task-drawer > button *', APPROVAL_CSS)
+        self.assertIn('color: #c2d0e0 !important', APPROVAL_CSS)
+
+    def test_loading_and_disabled_selection_states_keep_dark_surfaces(self):
+        self.assertIn('--background-fill-primary: #081321', APPROVAL_CSS)
+        self.assertIn('#new-task-drawer .wrap.default', APPROVAL_CSS)
+        self.assertIn('label:has(input:checked:disabled)', APPROVAL_CSS)
 
 
 if __name__ == "__main__":
