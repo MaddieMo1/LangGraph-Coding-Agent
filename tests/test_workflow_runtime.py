@@ -29,6 +29,17 @@ class InterruptingWorkflow:
 
 
 class WorkflowRuntimeTest(unittest.TestCase):
+    def test_streams_snapshots_and_lists_saved_threads(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, InterruptingWorkflow) as runtime:
+                snapshots = list(runtime.stream({"request": "review"}, "thread-1"))
+                threads = runtime.list_threads()
+
+            self.assertGreaterEqual(len(snapshots), 2)
+            self.assertIn("__interrupt__", snapshots[-1])
+            self.assertEqual("thread-1", threads[0]["thread_id"])
+
     def test_resumes_from_second_runtime_with_same_sqlite_and_thread(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             database_path = os.path.join(temporary_directory, "state", "checkpoints.sqlite")
