@@ -26,15 +26,21 @@ from workflow.task import finish_task
 from workflow.project_understanding import ProjectUnderstandingNode
 
 from llm.deepseek import DeepSeekLLM
+from memory.approval import ApprovalStore
 from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
 from memory.dependency_graph import DependencyGraphStore
+from memory.long_term import LongTermMemoryStore
+from tools.approval_tool import ApprovalTool
+from tools.change_proposal_tool import ChangeProposalTool
 from tools.diff_tool import DiffTool
 from tools.dependency_graph import DependencyGraphBuilder
 from tools.file_manager import FileManager
 from tools.project_scanner import UnityProjectScanner
 from tools.repair_tool import RepairTool
 from tools.test_generation_tool import TestGenerationTool
+from workflow.human_approval import ChangeProposalNode, HumanApprovalNode
+from workflow.long_term_memory import LongTermMemoryNode
 
 
 class AgentWorkflow:
@@ -65,8 +71,6 @@ class AgentWorkflow:
             self.llm
         )
 
-        self.coder = CoderAgent()
-
         self.code_checker = CodeCheckerAgent()
 
         self.reviewer = ReviewerAgent(
@@ -91,6 +95,16 @@ class AgentWorkflow:
         unity_project_path = os.getenv(
             "UNITY_TEST_PROJECT_PATH",
             r"D:\Unity\Unity_Project\CodingAgentTest"
+        )
+
+        self.long_term_memory = LongTermMemoryNode(
+            LongTermMemoryStore(
+                os.getenv(
+                    "LONG_TERM_MEMORY_PATH",
+                    os.path.join(day06_path, "memory", "long_term_memory.json")
+                )
+            ),
+            unity_project_path,
         )
 
         self.project_understanding = ProjectUnderstandingNode(
@@ -129,6 +143,39 @@ class AgentWorkflow:
                 "patch_history.json"
             ),
             self.diff_tool
+        )
+
+        self.approval_store = ApprovalStore(
+            os.getenv(
+                "APPROVAL_HISTORY_PATH",
+                os.path.join(day06_path, "memory", "approval_history.json")
+            )
+        )
+
+        self.change_proposal_tool = ChangeProposalTool(
+            self.file_manager,
+            generated_path,
+            self.diff_tool
+        )
+
+        self.approval_tool = ApprovalTool(
+            self.approval_store,
+            self.diff_tool,
+            self.patch_history
+        )
+
+        self.change_proposal = ChangeProposalNode(
+            self.change_proposal_tool,
+            self.approval_store
+        )
+
+        self.human_approval = HumanApprovalNode(
+            self.approval_tool
+        )
+
+        self.coder = CoderAgent(
+            self.llm,
+            generated_path
         )
 
         self.repair_tool = RepairTool(
@@ -174,7 +221,20 @@ class AgentWorkflow:
 
 
     def project_understanding_node(self,state):
-        return self.project_understanding.run(state)
+        result = self.project_understanding.run(state)
+        merged_state = {**state, **result}
+        return {**result, **self.long_term_memory.update_project(merged_state)}
+
+
+    def unity_compiler_node(self, state):
+        result = unity_compile_agent(state)
+        return {**result, **self.long_term_memory.observe_compile(result)}
+
+
+    def unity_test_node(self, state):
+        result = unity_test_agent(state)
+        merged_state = {**state, **result}
+        return {**result, **self.long_term_memory.observe_test(merged_state)}
 
 
     def project_understanding_router(self,state):
@@ -265,6 +325,37 @@ class AgentWorkflow:
         return self.repair.run(
             state
         )
+
+
+    def change_proposal_node(self,state):
+        return self.change_proposal.run(state)
+
+
+    def human_approval_node(self,state):
+        return self.human_approval.run(state)
+
+
+    def change_proposal_router(self,state):
+        status = state.get("approval_status", "")
+        source = state.get("proposal_source", "")
+
+        if status == "pending":
+            return "human_approval"
+
+        if status == "no_changes":
+            return "test_generator" if source == "coder" else "code_checker"
+
+        return "finish_task"
+
+
+    def human_approval_router(self,state):
+        status = state.get("approval_status", "")
+        source = state.get("proposal_source", "")
+
+        if status in {"approved", "partially_approved"}:
+            return "test_generator" if source == "coder" else "code_checker"
+
+        return "finish_task"
 
 
     def unity_compiler_router(self,state):
@@ -374,6 +465,16 @@ class AgentWorkflow:
         )
 
         self.workflow.add_node(
+            "change_proposal",
+            self.change_proposal_node
+        )
+
+        self.workflow.add_node(
+            "human_approval",
+            self.human_approval_node
+        )
+
+        self.workflow.add_node(
             "code_checker",
             self.code_checker_node
         )
@@ -405,12 +506,12 @@ class AgentWorkflow:
 
         self.workflow.add_node(
             "unity_compiler",
-            unity_compile_agent
+            self.unity_compiler_node
         )
 
         self.workflow.add_node(
             "unity_test",
-            unity_test_agent
+            self.unity_test_node
         )
 
 
@@ -478,11 +579,30 @@ class AgentWorkflow:
 
 
         # Coder
-        self.workflow.add_conditional_edges(
+        self.workflow.add_edge(
             "coder",
-            router,
+            "change_proposal"
+        )
+
+
+        # Change Proposal
+        self.workflow.add_conditional_edges(
+            "change_proposal",
+            self.change_proposal_router,
             {
-                "coder":"coder",
+                "human_approval":"human_approval",
+                "test_generator":"test_generator",
+                "code_checker":"code_checker",
+                "finish_task":"finish_task"
+            }
+        )
+
+
+        # Human Approval
+        self.workflow.add_conditional_edges(
+            "human_approval",
+            self.human_approval_router,
+            {
                 "test_generator":"test_generator",
                 "code_checker":"code_checker",
                 "finish_task":"finish_task"
@@ -546,7 +666,7 @@ class AgentWorkflow:
         # Repair
         self.workflow.add_edge(
             "repair",
-            "code_checker"
+            "change_proposal"
         )
 
 
@@ -556,15 +676,15 @@ class AgentWorkflow:
         )
 
 
-    def compile_debug(self):
+    def compile_debug(self, checkpointer=None):
 
         self.workflow.set_entry_point(
             "debug_start"
         )
 
-        return self.workflow.compile()
+        return self.workflow.compile(checkpointer=checkpointer)
 
-    def compile(self):
+    def compile(self, checkpointer=None):
         """
         编译Workflow
 
@@ -572,4 +692,4 @@ class AgentWorkflow:
             LangGraph应用
         """
 
-        return self.workflow.compile()
+        return self.workflow.compile(checkpointer=checkpointer)

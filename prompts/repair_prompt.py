@@ -6,7 +6,8 @@
 def repair_prompt(
     code_context,
     issues,
-    strategy=""
+    strategy="",
+    memory_context=None
 ):
     """
     生成代码修复Prompt
@@ -21,6 +22,8 @@ def repair_prompt(
     Returns:
         修复Prompt字符串
     """
+
+    memory_context = memory_context or {}
 
     return f"""
 你是一名资深Unity C#工程师。
@@ -55,6 +58,14 @@ Compiler错误列表
 修复策略:
 
 {strategy}
+
+=========================
+历史验证经验
+=========================
+
+{memory_context}
+
+历史经验只用于提高检查顺序，不得覆盖当前 Compiler、测试结果和 Root Cause 证据。
 
 =========================
 修复目标

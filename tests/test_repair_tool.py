@@ -32,7 +32,7 @@ class RepairToolTest(unittest.TestCase):
         self.file_manager.write_file(path, content)
         return path
 
-    def test_add_using_is_idempotent(self):
+    def test_add_using_proposes_change_without_writing(self):
         path = self.write_source(
             "InventoryManager.cs",
             "using System;\n\npublic class InventoryManager {}\n"
@@ -42,26 +42,12 @@ class RepairToolTest(unittest.TestCase):
             "InventoryManager.cs",
             "InventorySystem"
         )
-        second = self.tool.add_using(
-            "InventoryManager.cs",
-            "InventorySystem"
-        )
-
         content = self.file_manager.read_file(path)
         self.assertTrue(first["success"])
         self.assertTrue(first["changed"])
-        self.assertTrue(second["success"])
-        self.assertFalse(second["changed"])
-        self.assertEqual(len(first["patch_ids"]), 1)
-        self.assertEqual(second["patch_ids"], [])
-        self.assertEqual(
-            len(self.tool.patch_history.list_records()),
-            1
-        )
-        self.assertEqual(
-            content.count("using InventorySystem;"),
-            1
-        )
+        self.assertEqual([], first["patch_ids"])
+        self.assertIn("using InventorySystem;", first["changes"][0]["content"])
+        self.assertNotIn("using InventorySystem;", content)
 
     def test_rejects_path_outside_generated_root(self):
         result = self.tool.apply_llm_result(
@@ -102,7 +88,7 @@ CODE_END"""
             )
         )
 
-    def test_applies_multi_file_llm_result(self):
+    def test_proposes_multi_file_llm_result_without_writing(self):
         content = """FILE:InventoryData.cs
 CODE_START
 public class InventoryData {}
@@ -119,19 +105,17 @@ CODE_END"""
             result["files"],
             ["InventoryData.cs", "InventoryView.cs"]
         )
-        self.assertEqual(len(result["patch_ids"]), 2)
-        self.assertEqual(len(result["patches"]), 2)
+        self.assertEqual(result["patch_ids"], [])
+        self.assertEqual(result["patches"], [])
         self.assertEqual(
-            self.file_manager.read_file(
-                os.path.join(
-                    self.generated_root,
-                    "InventoryView.cs"
-                )
-            ),
-            "public class InventoryView {}"
+            ["InventoryData.cs", "InventoryView.cs"],
+            [change["file"] for change in result["changes"]],
+        )
+        self.assertFalse(
+            os.path.exists(os.path.join(self.generated_root, "InventoryView.cs"))
         )
 
-    def test_applied_patch_can_be_undone(self):
+    def test_single_file_llm_result_does_not_modify_source(self):
         path = self.write_source(
             "InventoryManager.cs",
             "public class InventoryManager {}\n"
@@ -141,11 +125,8 @@ CODE_END"""
             "InventoryManager.cs"
         )
 
-        undo_result = self.tool.patch_history.undo(
-            result["patch_ids"][0]
-        )
-
-        self.assertTrue(undo_result["success"])
+        self.assertTrue(result["success"])
+        self.assertEqual([], result["patch_ids"])
         self.assertEqual(
             self.file_manager.read_file(path),
             "public class InventoryManager {}\n"

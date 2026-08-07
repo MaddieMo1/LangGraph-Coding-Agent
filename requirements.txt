@@ -10,6 +10,10 @@ langchain-openai>=0.2.0
 
 # LangGraph Workflow
 langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=3.1.1,<4.0
+
+# Human Approval UI
+gradio>=6.22.0,<7.0
 
 # LLM
 openai>=1.50.0

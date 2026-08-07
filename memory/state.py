@@ -52,6 +52,9 @@ class AgentState(TypedDict):
     dependency_graph_path: str
     dependency_graph_status: str
     dependency_graph_error: str
+    memory_context: Dict[str, Any]
+    memory_status: str
+    memory_error: str
 
 
     # =========================
@@ -76,6 +79,13 @@ class AgentState(TypedDict):
 
     # Coder生成代码
     code: List[Dict[str, Any]]
+    proposed_changes: List[Dict[str, str]]
+    proposal_source: str
+    change_proposal: Dict[str, Any]
+    approval_request: Dict[str, Any]
+    approval_result: Dict[str, Any]
+    approval_history: List[Dict[str, Any]]
+    approval_status: str
     generated_tests: List[Dict[str, Any]]
     test_generation_result: Dict[str, Any]
 

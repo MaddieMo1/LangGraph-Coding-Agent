@@ -39,6 +39,7 @@ class SpyRepairTool:
             "success": True,
             "changed": True,
             "files": [file_name],
+            "changes": [{"file": file_name, "content": "using InventorySystem;\n"}],
             "error": ""
         }
 
@@ -50,13 +51,14 @@ class SpyRepairTool:
             "success": True,
             "changed": True,
             "files": [target_file],
+            "changes": [{"file": target_file, "content": content}],
             "error": ""
         }
 
 
 class RepairAgentTest(unittest.TestCase):
 
-    def test_agent_and_tool_write_repaired_file_together(self):
+    def test_agent_and_tool_propose_repaired_file_without_writing(self):
         with tempfile.TemporaryDirectory() as temp_directory:
             generated_root = os.path.join(
                 temp_directory,
@@ -89,10 +91,10 @@ class RepairAgentTest(unittest.TestCase):
                 "InventoryManager.cs"
             )
             self.assertEqual(result["repair_status"], "success")
-            self.assertTrue(os.path.isfile(repaired_path))
+            self.assertFalse(os.path.exists(repaired_path))
             self.assertEqual(
-                FileManager().read_file(repaired_path),
-                "public class InventoryManager {}"
+                [{"file": "InventoryManager.cs", "content": "public class InventoryManager {}"}],
+                result["proposed_changes"],
             )
 
     def test_delegates_llm_file_changes_to_repair_tool(self):

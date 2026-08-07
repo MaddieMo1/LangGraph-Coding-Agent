@@ -9,7 +9,8 @@ def get_reviewer_prompt(
     compile_result,
     architecture,
     repair_history,
-    test_result=None
+    test_result=None,
+    memory_context=None
 ):
     """
     获取代码审查Agent提示词
@@ -17,6 +18,8 @@ def get_reviewer_prompt(
     Returns:
         Reviewer Prompt
     """
+
+    memory_context = memory_context or {}
 
     return f"""
 你是一名Unity高级代码审查工程师。
@@ -57,6 +60,14 @@ def get_reviewer_prompt(
 
 
 你必须进行 Root Cause Analysis。
+
+=========================
+历史验证经验
+=========================
+
+{memory_context}
+
+历史经验只用于调整诊断优先级。当前 Compiler 和测试证据始终具有更高优先级。
 
 
 禁止:

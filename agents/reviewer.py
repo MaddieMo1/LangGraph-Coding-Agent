@@ -78,7 +78,8 @@ class ReviewerAgent:
                 "repair_history",
                 []
             ),
-            test_result
+            test_result,
+            state.get("memory_context", {})
         )
 
 

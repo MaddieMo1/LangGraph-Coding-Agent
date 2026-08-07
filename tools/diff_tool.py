@@ -181,6 +181,51 @@ class DiffTool:
         }
 
 
+    def preview_patch(self, patch):
+        """Validate a patch against disk and return both versions without writing."""
+
+        try:
+            self._validate_patch(patch)
+            path, normalized_name = self._resolve_file(patch["file"])
+        except (KeyError, TypeError, ValueError) as error:
+            return self._failure("INVALID_PATCH", str(error))
+
+        file_exists = os.path.isfile(path)
+        if patch["operation"] == "create" and file_exists:
+            return self._failure(
+                "SOURCE_CONFLICT",
+                f"待创建文件已经存在:{normalized_name}",
+            )
+        if patch["operation"] != "create" and not file_exists:
+            return self._failure("FILE_NOT_FOUND", f"文件不存在:{normalized_name}")
+
+        current_content = self.file_manager.read_file(path) if file_exists else ""
+        current_hash = self.hash_content(current_content)
+        if current_hash != patch["before_hash"]:
+            return self._failure(
+                "SOURCE_CONFLICT",
+                f"文件已发生变化:{normalized_name}",
+            )
+        try:
+            updated_content = self._apply_hunks(current_content, patch["hunks"])
+        except ValueError as error:
+            return self._failure("PATCH_CONFLICT", str(error))
+        if self.hash_content(updated_content) != patch["after_hash"]:
+            return self._failure("INVALID_PATCH", "补丁结果哈希与声明不一致")
+
+        return {
+            "success": True,
+            "changed": current_content != updated_content,
+            "file": normalized_name,
+            "before_hash": current_hash,
+            "after_hash": patch["after_hash"],
+            "before_content": current_content,
+            "after_content": updated_content,
+            "error_code": "",
+            "error": "",
+        }
+
+
     def compare_versions(
         self,
         file_name,
