@@ -161,10 +161,6 @@ python -m unittest discover -s tests -p "test_*.py"
 git diff --check
 ```
 
-<p align="center">
-  <img src="./assets/demo_repair_log.png" alt="真实修复闭环运行日志" width="850" />
-</p>
-
 > ⚠️ **验收提醒**：`finish_task` 只表示工作流结束。只有 Checker、Compiler、Reviewer 和剩余问题字段同时满足通过条件，才能认定测试成功。
 
 ## 📦 提交规范

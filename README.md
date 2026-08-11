@@ -141,24 +141,6 @@ flowchart TD
 
 界面将任务阶段、实时节点、变更文件、统一 Diff、提案信息和审批操作集中在同一个工作台中。历史任务从 SQLite 检查点自动发现，页面刷新或进程重启后仍可恢复待审批流程。
 
-### 🧭 多智能体工作流
-
-<p align="center">
-  <img src="./assets/demo_workflow_log.png" alt="多智能体工作流运行日志" width="900" />
-</p>
-
-### 🛠️ 自动修复闭环
-
-<p align="center">
-  <img src="./assets/demo_repair_log.png" alt="自动修复闭环运行日志" width="900" />
-</p>
-
-### 📂 多文件生成结果
-
-<p align="center">
-  <img src="./assets/demo_generated_files.png" alt="多文件代码生成结果" width="900" />
-</p>
-
 ## 🗂️ 项目结构
 
 ```text
