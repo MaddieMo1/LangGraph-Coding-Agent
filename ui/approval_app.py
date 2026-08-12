@@ -1303,10 +1303,16 @@ body {
 }
 
 #task-center-search input,
+#task-center-status [role="combobox"],
+#task-center-status input,
+#task-center-refresh,
 #task-center-refresh button,
 button#task-center-refresh {
     min-height: 44px !important;
     height: 44px !important;
+    max-height: 44px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
 }
 
 #task-center-status [role="combobox"],
@@ -1321,8 +1327,6 @@ button#task-center-refresh {
 
 #task-center-status [role="combobox"],
 #task-center-status input {
-    min-height: 44px !important;
-    height: 44px !important;
     padding: 0 14px !important;
     line-height: 42px !important;
 }
@@ -1333,9 +1337,9 @@ button#task-center-refresh {
 }
 
 #task-center-refresh {
+    display: flex !important;
     align-self: end !important;
-    min-height: 44px !important;
-    height: 44px !important;
+    align-items: stretch !important;
     padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
@@ -1344,6 +1348,7 @@ button#task-center-refresh {
 
 #task-center-refresh button,
 button#task-center-refresh {
+    flex: 1 1 auto !important;
     border: 1px solid var(--deck-line) !important;
     border-radius: 7px !important;
     color: var(--deck-text) !important;

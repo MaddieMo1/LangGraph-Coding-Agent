@@ -1060,7 +1060,7 @@ class ApprovalControllerTest(unittest.TestCase):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
         status_wrap_css = APPROVAL_CSS.split("#task-center-status .wrap {", 1)[1].split("}", 1)[0]
         status_control_css = APPROVAL_CSS.split(
-            '#task-center-status [role="combobox"],', 1
+            '#task-center-status [role="combobox"],\n#task-center-status input {', 1
         )[1].split("}", 1)[0]
 
         self.assertIn("border: none !important", task_center_css)
@@ -1079,6 +1079,19 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("min-height: 44px !important", APPROVAL_CSS)
         self.assertIn("padding: 0 14px !important", APPROVAL_CSS)
 
+    def test_task_center_filter_controls_share_one_fixed_height(self):
+        control_css = APPROVAL_CSS.split(
+            "#task-center-search input,", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn('#task-center-status [role="combobox"]', control_css)
+        self.assertIn("#task-center-refresh", control_css)
+        self.assertIn("min-height: 44px !important", control_css)
+        self.assertIn("height: 44px !important", control_css)
+        self.assertIn("max-height: 44px !important", control_css)
+        self.assertIn("box-sizing: border-box !important", control_css)
+        self.assertIn("margin: 0 !important", control_css)
+
     def test_task_center_matches_workspace_width_and_aligns_filter_controls(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
         filter_css = APPROVAL_CSS.split(
@@ -1094,7 +1107,7 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("align-items: end !important", filter_css)
         self.assertIn("width: 100% !important", filter_css)
         self.assertIn("max-width: none !important", filter_css)
-        self.assertIn("#task-center-refresh {\n    align-self: end !important", APPROVAL_CSS)
+        self.assertIn("#task-center-refresh {\n    display: flex !important;\n    align-self: end !important", APPROVAL_CSS)
         self.assertNotIn("margin-top: 27px", APPROVAL_CSS)
         self.assertIn("#task-center-search input", APPROVAL_CSS)
         self.assertIn("height: 44px !important", APPROVAL_CSS)
