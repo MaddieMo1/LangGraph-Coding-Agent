@@ -1103,7 +1103,7 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("margin: 0 !important", task_center_css)
         self.assertIn("border-radius: 0 !important", task_center_css)
         self.assertIn("display: grid !important", filter_css)
-        self.assertIn("grid-template-columns: minmax(0, 3fr)", filter_css)
+        self.assertIn("grid-template-columns: minmax(0, 8fr)", filter_css)
         self.assertIn("align-items: end !important", filter_css)
         self.assertIn("width: 100% !important", filter_css)
         self.assertIn("max-width: none !important", filter_css)
@@ -1111,6 +1111,16 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertNotIn("margin-top: 27px", APPROVAL_CSS)
         self.assertIn("#task-center-search input", APPROVAL_CSS)
         self.assertIn("height: 44px !important", APPROVAL_CSS)
+
+    def test_task_center_refresh_label_is_centered(self):
+        refresh_button_css = APPROVAL_CSS.rsplit(
+            "#task-center-refresh button,\nbutton#task-center-refresh {", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("display: flex !important", refresh_button_css)
+        self.assertIn("align-items: center !important", refresh_button_css)
+        self.assertIn("justify-content: center !important", refresh_button_css)
+        self.assertIn("text-align: center !important", refresh_button_css)
 
     def test_task_center_loading_hosts_do_not_add_root_layout_gaps(self):
         loading_host_css = APPROVAL_CSS.split(

@@ -1259,7 +1259,7 @@ body {
 #task-center-filters,
 #task-center-filters > .form {
     display: grid !important;
-    grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr) minmax(180px, 1fr);
+    grid-template-columns: minmax(0, 8fr) minmax(220px, 1fr) minmax(180px, 1fr);
     gap: 12px;
     align-items: end !important;
     width: 100% !important;
@@ -1348,7 +1348,11 @@ button#task-center-refresh {
 
 #task-center-refresh button,
 button#task-center-refresh {
+    display: flex !important;
     flex: 1 1 auto !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
     border: 1px solid var(--deck-line) !important;
     border-radius: 7px !important;
     color: var(--deck-text) !important;
