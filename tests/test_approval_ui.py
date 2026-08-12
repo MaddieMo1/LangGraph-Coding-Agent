@@ -1058,12 +1058,17 @@ class ApprovalControllerTest(unittest.TestCase):
 
     def test_task_center_removes_outer_and_status_control_borders(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
-        status_css = APPROVAL_CSS.split("#task-center-status .wrap,", 1)[1].split("}", 1)[0]
+        status_wrap_css = APPROVAL_CSS.split("#task-center-status .wrap {", 1)[1].split("}", 1)[0]
+        status_control_css = APPROVAL_CSS.split(
+            '#task-center-status [role="combobox"],', 1
+        )[1].split("}", 1)[0]
 
         self.assertIn("border: none !important", task_center_css)
         self.assertIn("outline: none !important", task_center_css)
-        self.assertIn("border: 1px solid var(--deck-line) !important", status_css)
-        self.assertIn("box-shadow: none !important", status_css)
+        self.assertIn("border: 0 !important", status_wrap_css)
+        self.assertIn("background: transparent !important", status_wrap_css)
+        self.assertIn("border: 1px solid var(--deck-line) !important", status_control_css)
+        self.assertIn("box-shadow: none !important", status_control_css)
 
     def test_task_center_status_and_refresh_use_consistent_dark_controls(self):
         self.assertIn("button#task-center-refresh", APPROVAL_CSS)
@@ -1084,9 +1089,18 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("border-radius: 0 !important", task_center_css)
         self.assertIn("display: grid !important", filter_css)
         self.assertIn("grid-template-columns: minmax(0, 3fr)", filter_css)
-        self.assertIn("align-items: end !important", filter_css)
+        self.assertIn("align-items: start !important", filter_css)
         self.assertIn("#task-center-search input", APPROVAL_CSS)
         self.assertIn("height: 44px !important", APPROVAL_CSS)
+
+    def test_task_center_loading_hosts_do_not_add_root_layout_gaps(self):
+        loading_host_css = APPROVAL_CSS.split(
+            "#task-center-loading-host,", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("position: fixed !important", loading_host_css)
+        self.assertIn("min-height: 0 !important", loading_host_css)
+        self.assertIn("margin: 0 !important", loading_host_css)
 
     def test_task_center_status_filter_has_local_loading_feedback(self):
         self.assertIn("task-center-loading-host", TASK_CENTER_FILTER_LOADING_JS)

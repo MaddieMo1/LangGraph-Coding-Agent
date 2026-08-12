@@ -1260,7 +1260,7 @@ body {
     display: grid !important;
     grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr) minmax(180px, 1fr);
     gap: 12px;
-    align-items: end !important;
+    align-items: start !important;
     background: #091320 !important;
 }
 #task-center-search,
@@ -1285,6 +1285,17 @@ body {
 #task-center-filters input,
 #task-center-filters .wrap { background: #081321 !important; }
 
+#task-center-status .wrap {
+    min-height: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+}
+
 #task-center-search input,
 #task-center-refresh button,
 button#task-center-refresh {
@@ -1292,7 +1303,6 @@ button#task-center-refresh {
     height: 44px !important;
 }
 
-#task-center-status .wrap,
 #task-center-status [role="combobox"],
 #task-center-status input {
     border: 1px solid var(--deck-line) !important;
@@ -1311,13 +1321,16 @@ button#task-center-refresh {
     line-height: 42px !important;
 }
 
-#task-center-status .wrap:hover,
 #task-center-status [role="combobox"]:hover {
     border-color: var(--deck-cyan) !important;
     background: #0d1c2e !important;
 }
 
 #task-center-refresh {
+    align-self: start !important;
+    margin-top: 27px !important;
+    min-height: 44px !important;
+    height: 44px !important;
     border: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -1443,9 +1456,15 @@ button#task-center-refresh:hover {
 
 #task-center-loading-host,
 #task-detail-loading-host {
-    position: static;
-    width: 0;
-    height: 0;
+    position: fixed !important;
+    z-index: 40;
+    top: 0;
+    left: 0;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
     padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
