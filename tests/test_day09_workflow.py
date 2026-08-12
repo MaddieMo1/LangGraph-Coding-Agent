@@ -8,6 +8,84 @@ from workflow.review_router import review_router
 
 
 class Day09WorkflowTest(unittest.TestCase):
+
+    def test_cs0122_targets_the_file_that_declares_the_inaccessible_member(self):
+        target = ReviewerAgent.resolve_compile_error_target(
+            {
+                "file": "GroundClickController.cs",
+                "code": "CS0122",
+                "message": (
+                    "'GroundClickManager.HandleGroundClick()' is inaccessible "
+                    "due to its protection level"
+                ),
+            },
+            [
+                {
+                    "file": "GroundClickController.cs",
+                    "content": "class GroundClickController { void Run() { manager.HandleGroundClick(); } }",
+                },
+                {
+                    "file": "GroundClickManager.cs",
+                    "content": "class GroundClickManager { private void HandleGroundClick() {} }",
+                },
+            ],
+        )
+
+        self.assertEqual("GroundClickManager.cs", target)
+
+    def test_reviewer_retargets_cs0122_root_cause_to_the_declaration_file(self):
+        class FakeLLM:
+            @staticmethod
+            def invoke(_prompt):
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "content": (
+                            '{"score": 50, "pass": false, "remaining_issues": [], '
+                            '"root_causes": [{"id": 1, "type": "compile_error", '
+                            '"source_file": "GroundClickController.cs", '
+                            '"target_file": "GroundClickController.cs", '
+                            '"error_code": "CS0122", '
+                            '"fix_action": {"operation": "repair_compile_errors", '
+                            '"target": "GroundClickController.cs", "details": "fix access"}}]}'
+                        )
+                    },
+                )()
+
+        result = ReviewerAgent(FakeLLM()).run(
+            {
+                "code": [
+                    {
+                        "file": "GroundClickController.cs",
+                        "content": "class GroundClickController { void Run() { manager.HandleGroundClick(); } }",
+                    },
+                    {
+                        "file": "GroundClickManager.cs",
+                        "content": "class GroundClickManager { private void HandleGroundClick() {} }",
+                    },
+                ],
+                "compile_result": {
+                    "success": False,
+                    "errors": [
+                        {
+                            "file": "GroundClickController.cs",
+                            "code": "CS0122",
+                            "message": (
+                                "'GroundClickManager.HandleGroundClick()' is inaccessible "
+                                "due to its protection level"
+                            ),
+                        }
+                    ],
+                },
+            }
+        )
+
+        root = result["root_causes"][0]
+        self.assertEqual("GroundClickController.cs", root["source_file"])
+        self.assertEqual("GroundClickManager.cs", root["target_file"])
+        self.assertEqual("GroundClickManager.cs", root["fix_action"]["target"])
+
     def test_coordinator_places_test_generator_after_coder(self):
         tasks = CoordinatorAgent().run({"agent_history": []})["tasks"]
 
@@ -62,7 +140,7 @@ class Day09WorkflowTest(unittest.TestCase):
         )
 
         self.assertEqual("repair", review_router(failed))
-        self.assertEqual("finish_task", review_router(passed))
+        self.assertEqual("git_commit", review_router(passed))
 
     def test_reviewer_forces_assertion_failure_into_issues(self):
         review = {"score": 100, "pass": True, "remaining_issues": []}

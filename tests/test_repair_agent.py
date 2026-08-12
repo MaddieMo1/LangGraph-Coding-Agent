@@ -16,9 +16,11 @@ class FakeLLM:
 
     def __init__(self):
         self.prompt = ""
+        self.prompts = []
 
     def invoke(self, prompt):
         self.prompt = prompt
+        self.prompts.append(prompt)
         return FakeResult()
 
 
@@ -26,11 +28,13 @@ class SpyRepairTool:
 
     def __init__(self):
         self.context_files = []
+        self.context_calls = []
         self.applied_content = ""
         self.target_file = ""
 
     def collect_context(self, files):
         self.context_files = files
+        self.context_calls.append(list(files))
         return "FILE:InventoryManager.cs\nold code"
 
     def add_using(self, file_name, namespace):
@@ -57,6 +61,106 @@ class SpyRepairTool:
 
 
 class RepairAgentTest(unittest.TestCase):
+
+    def test_groups_multiple_root_causes_for_the_same_target_into_one_llm_repair(self):
+        llm = FakeLLM()
+        repair_tool = SpyRepairTool()
+        agent = RepairAgent(llm, repair_tool)
+
+        result = agent.run(
+            {
+                "root_causes": [
+                    {
+                        "target_file": "InventoryView.cs",
+                        "source_file": "InventoryManager.cs",
+                        "description": "InventoryManager 重复声明",
+                        "fix_action": {
+                            "operation": "remove_duplicate",
+                            "target": "InventoryView.cs",
+                            "details": "删除重复的 InventoryManager",
+                        },
+                    },
+                    {
+                        "target_file": "InventoryView.cs",
+                        "source_file": "InventoryData.cs",
+                        "description": "ItemData 重复声明",
+                        "fix_action": {
+                            "operation": "remove_duplicate",
+                            "target": "InventoryView.cs",
+                            "details": "删除重复的 ItemData",
+                        },
+                    },
+                ],
+                "review": {"remaining_issues": []},
+                "repair_count": 0,
+                "repair_history": [],
+            }
+        )
+
+        self.assertEqual(1, len(llm.prompts))
+        self.assertEqual(
+            [["InventoryView.cs", "InventoryManager.cs", "InventoryData.cs"]],
+            repair_tool.context_calls,
+        )
+        self.assertIn("删除重复的 InventoryManager", llm.prompts[0])
+        self.assertIn("删除重复的 ItemData", llm.prompts[0])
+        self.assertEqual(2, len(result["repair_result"]["actions"][0]["roots"]))
+
+    def test_keeps_different_repair_targets_as_separate_llm_calls(self):
+        llm = FakeLLM()
+        agent = RepairAgent(llm, SpyRepairTool())
+
+        result = agent.run(
+            {
+                "root_causes": [
+                    {"target_file": "A.cs", "fix_action": {"operation": "rewrite"}},
+                    {"target_file": "B.cs", "fix_action": {"operation": "rewrite"}},
+                ],
+                "review": {"remaining_issues": []},
+                "repair_count": 0,
+                "repair_history": [],
+            }
+        )
+
+        self.assertEqual(2, len(llm.prompts))
+        self.assertEqual(["A.cs", "B.cs"], [action["files"][0] for action in result["repair_result"]["actions"]])
+
+    def test_merges_duplicate_file_changes_from_successful_actions(self):
+        agent = RepairAgent(FakeLLM(), SpyRepairTool())
+        agent.route_fix = lambda root_causes, issues, memory_context: {
+            "actions": [
+                {
+                    "success": True,
+                    "changes": [
+                        {"file": "HealthComponent.cs", "content": "first"},
+                        {"file": "HealthData.cs", "content": "data"},
+                    ],
+                },
+                {
+                    "success": True,
+                    "changes": [
+                        {"file": "HealthComponent.cs", "content": "final"},
+                    ],
+                },
+            ]
+        }
+
+        result = agent.run(
+            {
+                "root_causes": [{"description": "duplicate repair targets"}],
+                "review": {"remaining_issues": []},
+                "repair_count": 0,
+                "repair_history": [],
+            }
+        )
+
+        self.assertEqual(
+            [
+                {"file": "HealthComponent.cs", "content": "final"},
+                {"file": "HealthData.cs", "content": "data"},
+            ],
+            result["proposed_changes"],
+        )
 
     def test_agent_and_tool_propose_repaired_file_without_writing(self):
         with tempfile.TemporaryDirectory() as temp_directory:

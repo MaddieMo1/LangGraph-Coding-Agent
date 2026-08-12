@@ -257,7 +257,7 @@ def review_router(state):
             "[Review Router]审核通过"
         )
 
-        return "finish_task"
+        return "git_commit"
 
 
     # =========================

@@ -130,8 +130,16 @@ class RepairAgent:
         ]
 
         proposed_changes = []
+        change_indexes = {}
         for action in successful_actions:
-            proposed_changes.extend(action.get("changes", []))
+            for change in action.get("changes", []):
+                file_name = change.get("file", "") if isinstance(change, dict) else ""
+                if file_name and file_name in change_indexes:
+                    proposed_changes[change_indexes[file_name]] = change
+                    continue
+                if file_name:
+                    change_indexes[file_name] = len(proposed_changes)
+                proposed_changes.append(change)
 
 
         if actions and len(successful_actions) == len(actions):
@@ -206,62 +214,37 @@ class RepairAgent:
         """
 
         actions=[]
+        grouped_roots = []
+        group_indexes = {}
 
+        for index, root in enumerate(root_causes):
+            target_file = self._target_file(root)
+            group_key = target_file or f"__root_{index}"
+            if group_key not in group_indexes:
+                group_indexes[group_key] = len(grouped_roots)
+                grouped_roots.append([])
+            grouped_roots[group_indexes[group_key]].append(root)
 
-        for root in root_causes:
-
-            action = root.get(
-                "fix_action",
-                {}
-            )
-
-
-            operation = action.get(
-                "operation",
-                ""
-            )
-
+        for roots in grouped_roots:
+            root = roots[0]
+            action = root.get("fix_action", {})
+            operation = action.get("operation", "")
 
             print(
                 f"[Repair Router]检测:{operation}"
             )
 
-
-            if operation=="add_using":
-
-                file_name = (
-                    action.get(
-                        "target",
-                        ""
-                    )
-                    or
-                    root.get(
-                        "target_file",
-                        root.get(
-                            "file",
-                            ""
-                        )
-                    )
-                )
-
-                namespace = action.get(
-                    "namespace",
-                    ""
-                )
-
+            if len(roots) == 1 and operation == "add_using":
                 actions.append(
                     self.repair_tool.add_using(
-                        file_name,
-                        namespace
+                        self._target_file(root),
+                        action.get("namespace", "")
                     )
                 )
-
-
             else:
-
                 actions.append(
                     self.llm_repair(
-                        root,
+                        roots,
                         issues,
                         memory_context
                     )
@@ -280,7 +263,7 @@ class RepairAgent:
 
     def llm_repair(
         self,
-        root,
+        roots,
         issues,
         memory_context=None
     ):
@@ -298,57 +281,19 @@ class RepairAgent:
             修复结果
         """
 
-        files = []
+        roots = roots if isinstance(roots, list) else [roots]
+        root = roots[0]
+        target_file = self._target_file(root)
+        files = [target_file] if target_file else []
 
-        for key in [
-            "target_file",
-            "source_file"
-        ]:
-
-            file = root.get(
-                key,
-                ""
-            )
-
-            if file:
-
-                files.append(
-                    file
-                )
-
-
-        files.extend(
-            root.get(
-                "related_files",
-                []
-            )
-        )
-
-
-        action = root.get(
-            "fix_action",
-            {}
-        )
-
-
-        target_file = (
-            action.get(
-                "target",
-                ""
-            )
-            or
-            root.get(
-                "target_file",
-                root.get(
-                    "file",
-                    ""
-                )
-            )
-        )
-
-
-        if target_file and target_file not in files:
-            files.append(target_file)
+        for grouped_root in roots:
+            for key in ["source_file", "target_file"]:
+                file_name = grouped_root.get(key, "")
+                if file_name and file_name not in files:
+                    files.append(file_name)
+            for file_name in grouped_root.get("related_files", []):
+                if file_name and file_name not in files:
+                    files.append(file_name)
 
 
         try:
@@ -366,20 +311,16 @@ class RepairAgent:
             }
 
 
-        strategy = (
-            root.get(
-                "fix_strategy",
-                ""
+        strategies = []
+        for grouped_root in roots:
+            action = grouped_root.get("fix_action", {})
+            strategy = (
+                grouped_root.get("fix_strategy", "")
+                or action.get("details", grouped_root.get("description", ""))
             )
-            or
-            action.get(
-                "details",
-                root.get(
-                    "description",
-                    ""
-                )
-            )
-        )
+            if strategy:
+                strategies.append(strategy)
+        strategy = "\n".join(f"- {item}" for item in strategies)
 
 
         prompt = repair_prompt(
@@ -413,5 +354,15 @@ class RepairAgent:
 
         return {
             **tool_result,
-            "root": root
+            "root": root,
+            "roots": roots,
         }
+
+
+    @staticmethod
+    def _target_file(root):
+        action = root.get("fix_action", {})
+        return (
+            action.get("target", "")
+            or root.get("target_file", root.get("file", ""))
+        )

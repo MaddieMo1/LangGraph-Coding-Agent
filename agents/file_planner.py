@@ -6,6 +6,7 @@ import json
 import re
 
 from prompts.file_planner_prompt import get_file_planner_prompt
+from utils.file_roles import is_test_file_name
 
 
 class FilePlannerAgent:
@@ -148,7 +149,13 @@ class FilePlannerAgent:
                 return []
 
 
-            return files
+            return [
+                file_info
+                for file_info in files
+                if not is_test_file_name(
+                    file_info.get("name", "") if isinstance(file_info, dict) else ""
+                )
+            ]
 
 
         except Exception as e:

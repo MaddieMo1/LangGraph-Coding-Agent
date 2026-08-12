@@ -49,6 +49,10 @@ def get_architecture_prompt(query, project_context=None, dependency_graph=None):
 
 {graph_json}
 
+范围约束：用户需求是本次设计的唯一目标。现有工程上下文仅用于复用类型和避免冲突；
+除非用户明确要求，不得重构、重写或补全与本次需求无关的现有系统。
+下文中的 Inventory 名称仅是架构规则示例，不代表当前任务必须设计或修改背包系统。
+
 
 请输出：
 

@@ -1,6 +1,10 @@
+from datetime import datetime, timezone
 from html import escape
+from zoneinfo import ZoneInfo
 
 import gradio as gr
+
+from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state
 
 
 APPROVAL_CSS = """
@@ -206,6 +210,13 @@ body {
     animation: deck-status-pulse 1.6s ease-in-out infinite;
 }
 
+.status-preflight .status-badge,
+.status-validating .status-badge {
+    border-color: rgba(155, 124, 255, .5);
+    color: #b9a7ff;
+    background: rgba(75, 53, 131, .34);
+}
+
 .status-approved .status-badge,
 .status-partially_approved .status-badge,
 .status-completed .status-badge {
@@ -215,7 +226,8 @@ body {
 }
 
 .status-rejected .status-badge,
-.status-conflicted .status-badge {
+.status-conflicted .status-badge,
+.status-failed .status-badge {
     border-color: rgba(255, 99, 118, .42);
     color: var(--deck-red);
     background: #321827;
@@ -288,6 +300,105 @@ body {
     padding: 20px 16px 14px;
     background: rgba(7, 16, 29, .78);
     animation-delay: .05s;
+}
+
+#task-entry-panel,
+#execution-panel {
+    width: min(860px, 100%);
+    margin: 20px auto 0;
+    padding: 28px !important;
+    border: 1px solid var(--deck-line-soft) !important;
+    border-radius: 10px !important;
+    background: rgba(11, 22, 38, .9) !important;
+}
+
+#task-entry-panel .styler,
+#execution-panel .styler,
+#review-workspace-shell .styler {
+    background: transparent !important;
+}
+
+#review-workspace-shell {
+    gap: 14px;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+#task-entry-heading,
+#execution-detail {
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.execution-heading { margin-bottom: 22px; }
+
+.gate-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 18px;
+}
+
+.gate-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--deck-line-soft);
+    color: #8292a8;
+    font-size: 12px;
+}
+
+.gate-row strong {
+    color: #c2d0e0;
+    font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    font-weight: 600;
+}
+
+.execution-error {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 99, 118, .35);
+    border-radius: 7px;
+    color: #ff9aa6;
+    background: rgba(50, 24, 39, .76);
+    font-size: 12px;
+}
+
+.execution-boundary {
+    margin-top: 22px;
+    color: #64768e;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 18px;
+    margin-top: 22px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    color: #70829a;
+    font-size: 12px;
+}
+
+.detail-row strong {
+    color: #aebdd0;
+    font-weight: 600;
+    text-align: right;
+}
+
+.recovery-copy {
+    margin-top: 18px;
+    color: #9fb0c5;
+    font-size: 12px;
+    line-height: 1.6;
 }
 
 #right-inspector {
@@ -388,7 +499,7 @@ body {
 .stage-state {
     margin-top: 5px;
     color: #586b84;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 #progress-activity {
@@ -398,6 +509,22 @@ body {
     border: 1px solid var(--deck-line-soft) !important;
     border-radius: 8px !important;
     background: rgba(11, 22, 38, .76) !important;
+}
+
+#active-task-lock {
+    padding: 12px !important;
+    border: 1px solid var(--deck-line-soft) !important;
+    border-radius: 8px !important;
+    color: var(--deck-text) !important;
+    background: var(--deck-surface) !important;
+}
+
+#active-task-lock > div,
+#active-task-lock .html-container,
+#active-task-lock .active-task-lock {
+    border: 0 !important;
+    color: var(--deck-text) !important;
+    background: var(--deck-surface) !important;
 }
 
 .activity-head {
@@ -437,7 +564,7 @@ body {
 .activity-entry,
 .activity-empty {
     color: #6f8199;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.45;
 }
 
@@ -580,6 +707,7 @@ body {
 #file-panel,
 #diff-panel,
 #proposal-card,
+#git-card,
 #note-card {
     min-width: 0;
     min-height: 0;
@@ -590,6 +718,7 @@ body {
 }
 
 #proposal-card .styler,
+#git-card .styler,
 #note-card .styler {
     background: #0b1626 !important;
 }
@@ -697,7 +826,7 @@ body {
 
 .selection-summary {
     color: #6f8199;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.45;
 }
 
@@ -707,14 +836,24 @@ body {
 }
 
 #diff-view {
-    height: 100% !important;
-    min-height: 520px;
+    height: clamp(360px, 58vh, 620px) !important;
+    min-height: 360px;
+    max-height: 620px;
     border: 0 !important;
+    overflow: hidden !important;
 }
 
 #diff-view > div,
+#diff-view .wrap,
 #diff-view .code_wrap,
-#diff-view .cm-editor,
+#diff-view .cm-editor {
+    height: 100% !important;
+    min-height: 0 !important;
+    border: 0 !important;
+    background: #081321 !important;
+    overflow: hidden !important;
+}
+
 #diff-view .cm-scroller {
     height: 100% !important;
     min-height: 0 !important;
@@ -726,6 +865,10 @@ body {
     color: #b8c6d7 !important;
     font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace !important;
     font-size: 12px !important;
+}
+
+#diff-view .cm-scroller {
+    overflow: auto !important;
 }
 
 #diff-view .cm-content,
@@ -746,13 +889,89 @@ body {
 }
 
 #proposal-card,
+#repair-context-card,
+#git-card,
 #note-card {
     padding: 16px;
 }
 
+#repair-context-card,
+#git-card,
 #note-card {
     flex: 1 1 auto;
     margin-top: 12px;
+}
+
+#repair-context-card {
+    border-color: rgba(155, 124, 255, .38) !important;
+    background: linear-gradient(180deg, rgba(28, 24, 52, .72), rgba(11, 22, 38, .92)) !important;
+}
+
+#repair-context-info {
+    border: 0 !important;
+    color: var(--deck-text) !important;
+    background: transparent !important;
+    --block-background-fill: transparent;
+    --body-background-fill: transparent;
+    --background-fill-primary: transparent;
+}
+
+#repair-context-info > div,
+#repair-context-info .html-container,
+#repair-context-info .prose,
+#repair-context-info .prose > div,
+#repair-context-info .repair-review-card {
+    border: 0 !important;
+    color: var(--deck-text) !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+.repair-review-card {
+    display: grid;
+    gap: 13px;
+}
+
+.repair-review-meta,
+.repair-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.repair-review-meta span,
+.repair-chip {
+    padding: 4px 8px;
+    border: 1px solid rgba(155, 124, 255, .32);
+    border-radius: 999px;
+    color: #c8bcff;
+    background: rgba(155, 124, 255, .1);
+    font-size: 11px;
+}
+
+.repair-section-label {
+    margin-bottom: 5px;
+    color: #71849d;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.repair-review-card ul {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 17px;
+    color: #b7c5d6;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.repair-files,
+.repair-strategy {
+    color: #aebed0;
+    font-size: 12px;
+    line-height: 1.55;
 }
 
 .proposal-grid {
@@ -806,7 +1025,7 @@ body {
     padding-top: 12px;
     border-top: 1px solid var(--deck-line-soft);
     color: #60738b;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.55;
 }
 
@@ -838,7 +1057,7 @@ body {
 .decision-copy {
     margin-top: 4px;
     color: #61748d;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 #decision-actions {
@@ -890,6 +1109,478 @@ body {
     filter: saturate(.5);
 }
 
+#saved-task-detail {
+    margin-top: 10px;
+    padding: 12px !important;
+    border: 1px solid var(--deck-line-soft) !important;
+    border-radius: 8px;
+    background: rgba(8, 19, 33, .72) !important;
+}
+
+.saved-task-detail {
+    display: grid;
+    gap: 8px;
+}
+
+.saved-task-title {
+    color: var(--deck-text);
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.45;
+}
+
+.saved-task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.saved-task-meta span {
+    padding: 3px 7px;
+    border: 1px solid var(--deck-line);
+    border-radius: 999px;
+    color: #9fb0c5;
+    font-size: 10px;
+}
+
+.saved-task-id,
+.saved-task-empty {
+    color: #657992;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.saved-task-delete-success,
+.saved-task-delete-error {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.saved-task-delete-success { color: var(--deck-green); }
+.saved-task-delete-error { color: var(--deck-red); }
+
+#delete-saved-task-confirm label {
+    color: #899bb2 !important;
+    font-size: 11px !important;
+}
+
+#primary-navigation {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    gap: 6px !important;
+    padding: 4px;
+    border: 1px solid var(--deck-line-soft);
+    border-radius: 8px;
+    background: #081321;
+}
+
+#primary-navigation button {
+    min-width: 88px;
+    min-height: 34px;
+    border: 0 !important;
+    color: #8192a8 !important;
+    background: transparent !important;
+}
+
+#primary-navigation button.primary,
+#primary-navigation button:hover {
+    color: var(--deck-cyan) !important;
+    background: rgba(49, 215, 231, .08) !important;
+}
+
+#open-task-center { margin-top: 12px; }
+
+#task-center-view,
+#task-center-view.gr-group {
+    min-height: calc(100vh - 88px);
+    padding: 34px 42px 120px !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    color: var(--deck-text);
+    background: #091320 !important;
+    --block-background-fill: #091320;
+    --background-fill-primary: #091320;
+}
+
+#task-center-view > .gap,
+#task-center-view > .gr-group,
+#task-center-heading,
+#task-center-stats,
+#task-center-filters,
+#task-center-cards,
+#task-center-view > .form,
+#task-center-view .form,
+#task-center-view .html-container,
+#task-center-view .prose {
+    color: var(--deck-text) !important;
+    background: #091320 !important;
+    background-color: #091320 !important;
+}
+
+#task-center-view .styler,
+#task-center-view .wrap.default,
+#task-center-view .wrap.center,
+#task-center-view .loading,
+#task-center-view .progress-text,
+#task-center-view .eta-bar {
+    border-color: var(--deck-line) !important;
+    color: var(--deck-text) !important;
+    background: #091320 !important;
+    background-color: #091320 !important;
+}
+
+.task-center-heading h1 {
+    margin: 4px 0 6px;
+    font-size: 32px;
+    color: var(--deck-text);
+}
+
+.task-center-heading p { margin: 0; color: var(--deck-text-muted); }
+
+#task-center-stats { gap: 12px; margin: 22px 0 18px; background: #091320 !important; }
+#task-center-stats button {
+    min-height: 78px;
+    justify-content: flex-start;
+    padding: 16px !important;
+    border: 1px solid var(--deck-line) !important;
+    color: var(--deck-text) !important;
+    background: #0b1626 !important;
+    font-size: 14px !important;
+}
+#task-center-stats button:hover { border-color: var(--deck-cyan) !important; }
+
+#task-center-filters { gap: 12px; align-items: end; background: #091320 !important; }
+#task-center-search,
+#task-center-status,
+#task-center-refresh,
+#task-center-search .form,
+#task-center-status .form { background: #091320 !important; }
+#task-center-filters input,
+#task-center-filters .wrap { background: #081321 !important; }
+
+#task-center-status .wrap,
+#task-center-status [role="combobox"],
+#task-center-status input {
+    border: 1px solid var(--deck-line) !important;
+    border-radius: 7px !important;
+    color: var(--deck-text) !important;
+    background: #0b1626 !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+}
+
+#task-center-status [role="combobox"],
+#task-center-status input {
+    min-height: 44px !important;
+    padding: 0 14px !important;
+    line-height: 42px !important;
+}
+
+#task-center-status .wrap:hover,
+#task-center-status [role="combobox"]:hover {
+    border-color: var(--deck-cyan) !important;
+    background: #0d1c2e !important;
+}
+
+#task-center-refresh {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#task-center-refresh button,
+button#task-center-refresh {
+    border: 1px solid var(--deck-line) !important;
+    border-radius: 7px !important;
+    color: var(--deck-text) !important;
+    background: #0b1626 !important;
+    box-shadow: none !important;
+}
+
+#task-center-refresh button:hover,
+button#task-center-refresh:hover {
+    border-color: var(--deck-cyan) !important;
+    color: var(--deck-cyan) !important;
+    background: #0d1c2e !important;
+}
+
+#task-center-cards,
+#task-center-cards > div,
+#task-center-cards .html-container,
+#task-center-cards .prose {
+    border: 0 !important;
+    background: #091320 !important;
+    background-color: #091320 !important;
+}
+
+.task-center-list { display: grid; gap: 10px; margin-top: 16px; }
+.task-center-card {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 112px;
+    gap: 14px;
+    align-items: center;
+    padding: 16px;
+    border: 1px solid var(--deck-line);
+    border-radius: 9px;
+    background: #0b1626;
+    transition: border-color .18s ease, background-color .18s ease;
+}
+.task-center-card:hover { border-color: #35506f; background: #0d1a2c; }
+.task-card-active { border-color: rgba(49, 215, 231, .7); }
+.task-card-selected { box-shadow: inset 3px 0 var(--deck-cyan); }
+.task-card-select,
+.task-card-open {
+    border: 1px solid var(--deck-line);
+    border-radius: 6px;
+    color: var(--deck-text);
+    background: #101d2f;
+    cursor: pointer;
+}
+.task-card-select { width: 34px; height: 34px; }
+.task-card-select:disabled { cursor: not-allowed; color: var(--deck-cyan); opacity: .8; }
+.task-card-open { min-height: 38px; }
+.task-card-open {
+    transition: transform .16s ease, border-color .16s ease, color .16s ease,
+        background-color .16s ease, box-shadow .16s ease;
+}
+.task-card-open:hover {
+    transform: translateY(-2px);
+    border-color: rgba(49, 215, 231, .72);
+    color: var(--deck-cyan);
+    background: #0d2b38;
+    box-shadow: 0 6px 18px rgba(49, 215, 231, .12);
+}
+.task-card-title { margin-bottom: 5px; color: var(--deck-text); font-size: 14px; font-weight: 720; }
+.task-card-copy { overflow: hidden; color: #93a5ba; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.task-card-meta span,
+.task-drawer-status {
+    padding: 3px 8px;
+    border: 1px solid var(--deck-line);
+    border-radius: 999px;
+    color: #a8bad0;
+    font-size: 10px;
+}
+.task-center-empty,
+.task-drawer-empty { padding: 28px; color: var(--deck-text-muted); text-align: center; }
+
+.task-local-loader {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 18px;
+    color: #8ea1b8;
+    background: #091320;
+}
+
+.task-local-loader-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+}
+
+.task-local-loader-label::before {
+    content: "";
+    width: 13px;
+    height: 13px;
+    border: 2px solid #27405d;
+    border-top-color: var(--deck-cyan);
+    border-radius: 50%;
+    animation: task-loader-spin .8s linear infinite;
+}
+
+.task-local-skeleton {
+    height: 86px;
+    border: 1px solid var(--deck-line-soft);
+    border-radius: 9px;
+    background: linear-gradient(100deg, #0b1626 30%, #12243a 48%, #0b1626 66%);
+    background-size: 240% 100%;
+    animation: task-loader-shimmer 1.25s ease-in-out infinite;
+}
+
+#task-center-cards { position: relative; min-height: 112px; }
+#task-detail-drawer .task-local-loader { padding: 24px; background: #091525; }
+#task-detail-drawer .task-local-skeleton { height: 54px; }
+
+#task-center-loading-host,
+#task-detail-loading-host {
+    position: static;
+    width: 0;
+    height: 0;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+}
+
+#task-center-loading-host > div,
+#task-detail-loading-host > div,
+#task-center-loading-host .html-container,
+#task-detail-loading-host .html-container,
+#task-center-loading-host .prose,
+#task-detail-loading-host .prose {
+    width: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+}
+
+.task-loading-slot {
+    width: 0;
+    height: 0;
+    overflow: visible;
+}
+
+.task-loader-error {
+    position: fixed;
+    z-index: 45;
+    top: 108px;
+    right: 24px;
+    padding: 12px 16px;
+    border: 1px solid var(--deck-danger);
+    border-radius: 8px;
+    color: #ff91a9;
+    background: #2a1220;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .32);
+}
+
+.task-center-loading-overlay {
+    position: fixed;
+    z-index: 24;
+    inset: 88px 0 0;
+    padding: 72px max(6vw, 48px);
+    background: #091320;
+}
+
+.task-center-loading-overlay .task-local-loader {
+    position: relative;
+    width: min(1680px, 100%);
+    margin: 0 auto;
+    padding: 24px;
+    border: 1px solid var(--deck-line-soft);
+    border-radius: 10px;
+}
+
+.task-detail-loading-overlay {
+    position: fixed;
+    z-index: 40;
+    top: 88px;
+    right: 0;
+    width: min(520px, 92vw);
+    height: calc(100vh - 88px);
+    padding: 24px;
+    border-left: 1px solid var(--deck-line);
+    background: #091525;
+    box-shadow: -20px 0 50px rgba(0, 0, 0, .34);
+}
+
+.task-detail-loading-overlay .task-local-loader {
+    position: relative;
+    padding: 0;
+    background: #091525;
+}
+
+#task-center-view.task-client-visible,
+#task-detail-drawer.task-client-visible {
+    display: flex !important;
+    flex-direction: column !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#workspace-grid.task-client-hidden,
+#task-center-view.task-client-hidden,
+#task-detail-drawer.task-client-hidden {
+    display: none !important;
+}
+
+#task-selection-bar {
+    margin-top: 14px;
+    padding: 12px 16px !important;
+    border: 1px solid rgba(49, 215, 231, .35) !important;
+    background: transparent !important;
+}
+
+#task-selection-bar .form,
+#task-selection-bar .markdown,
+#task-selection-summary,
+#task-selection-summary > div,
+#task-selection-summary .prose,
+#task-center-pagination,
+#task-center-pagination .form,
+#task-page-info,
+#task-page-info > div,
+#task-page-info .prose {
+    border: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+#task-center-pagination { align-items: center; gap: 10px; margin-top: 14px; }
+#task-page-info { text-align: center; color: var(--deck-text-muted) !important; }
+
+#task-detail-drawer,
+#task-delete-confirm {
+    position: fixed;
+    z-index: 30;
+    top: 88px;
+    right: 0;
+    width: min(520px, 92vw);
+    height: calc(100vh - 88px);
+    padding: 24px !important;
+    border-left: 1px solid var(--deck-line) !important;
+    color: var(--deck-text) !important;
+    background: #091525 !important;
+    box-shadow: -20px 0 50px rgba(0, 0, 0, .34);
+    overflow-y: auto;
+    --block-background-fill: #091525;
+    --background-fill-primary: #091525;
+}
+#task-detail-drawer > .form,
+#task-delete-confirm > .form,
+#task-detail-drawer .styler,
+#task-delete-confirm .styler,
+#task-detail-content,
+#task-delete-confirm-copy,
+#task-delete-feedback {
+    color: var(--deck-text) !important;
+    background: #091525 !important;
+    background-color: #091525 !important;
+}
+#task-detail-drawer .html-container,
+#task-detail-drawer .prose,
+#task-delete-confirm .html-container,
+#task-delete-confirm .prose { color: var(--deck-text) !important; background: #091525 !important; }
+.task-drawer-content h2 { margin: 14px 0 8px; color: var(--deck-text); font-size: 21px; }
+.task-drawer-content p { color: #a6b5c8; line-height: 1.65; }
+.task-drawer-content dl { display: grid; grid-template-columns: 92px 1fr; gap: 10px; margin-top: 24px; }
+.task-drawer-content dt { color: #71839a; }
+.task-drawer-content dd { margin: 0; color: var(--deck-text); overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+    #task-center-view { padding: 20px 14px 80px !important; }
+    .task-center-card { grid-template-columns: 38px minmax(0, 1fr); }
+    .task-card-open { grid-column: 2; }
+}
+
+.gradio-container button:focus-visible,
+.gradio-container input:focus-visible,
+.gradio-container textarea:focus-visible,
+.gradio-container [role="checkbox"]:focus-visible,
+.gradio-container [role="combobox"]:focus-visible {
+    outline: 2px solid var(--deck-cyan) !important;
+    outline-offset: 3px !important;
+}
+
 .gradio-container footer {
     display: none !important;
 }
@@ -916,6 +1607,22 @@ body {
         scroll-behavior: auto !important;
     }
     #neural-particles { display: none; }
+}
+
+@keyframes task-loader-spin { to { transform: rotate(360deg); } }
+@keyframes task-loader-shimmer { to { background-position: -140% 0; } }
+
+@media (forced-colors: active) {
+    .status-badge,
+    .workflow-step.is-active .stage-index,
+    .workflow-step.is-error .stage-index {
+        border: 1px solid CanvasText;
+    }
+    .gradio-container button:focus-visible,
+    .gradio-container input:focus-visible,
+    .gradio-container textarea:focus-visible {
+        outline-color: Highlight !important;
+    }
 }
 
 @media (max-width: 1120px) {
@@ -996,7 +1703,7 @@ body {
     }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 980px) {
     #topbar {
         min-height: 72px;
         padding: 10px 12px;
@@ -1031,7 +1738,7 @@ body {
     .status-badge {
         min-height: 24px;
         padding-inline: 8px;
-        font-size: 10px;
+        font-size: 12px;
         white-space: nowrap;
     }
     #topbar-context { display: none; }
@@ -1053,6 +1760,13 @@ body {
         min-height: 760px;
         padding-inline: 12px;
     }
+    #task-entry-panel,
+    #execution-panel {
+        margin-top: 0;
+        padding: 18px !important;
+    }
+    .gate-grid,
+    .detail-grid { grid-template-columns: 1fr; }
     #right-inspector {
         border-top: 1px solid var(--deck-line-soft);
         border-left: 0;
@@ -1149,7 +1863,159 @@ APPROVAL_JS = r"""
 """
 
 
+TASK_CENTER_CARD_JS = r"""
+const setTaskLoader = (hostId, markup) => {
+    const host = document.getElementById(hostId);
+    const surface = host?.querySelector('.task-loading-slot');
+    if (!surface) return;
+    surface.innerHTML = markup;
+    window.clearTimeout(surface._taskLoaderTimeout);
+    surface._taskLoaderTimeout = window.setTimeout(() => {
+        if (!surface.querySelector('[data-task-loader]')) return;
+        surface.innerHTML = '<div class="task-loader-error">加载超时，请重试。</div>';
+    }, 12000);
+};
+const bindTaskCards = () => {
+    element.querySelectorAll('[data-action][data-thread-id]').forEach((node) => {
+        if (node.dataset.bound === 'true') return;
+        node.dataset.bound = 'true';
+        node.addEventListener('click', (event) => {
+            const target = event.target.closest('[data-action][data-thread-id]');
+            if (!target || target.disabled) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (target.dataset.action === 'toggle') {
+                const card = target.closest('.task-center-card');
+                const selected = !card?.classList.contains('task-card-selected');
+                card?.classList.toggle('task-card-selected', selected);
+                target.textContent = selected ? '✓' : '';
+            } else if (target.dataset.action === 'detail') {
+                setTaskLoader('task-detail-loading-host', `
+                        <div class="task-detail-loading-overlay" data-task-loader role="status" aria-live="polite">
+                            <div class="task-local-loader">
+                                <div class="task-local-loader-label">正在加载任务详情…</div>
+                                ${Array.from({ length: 6 }, () => '<div class="task-local-skeleton"></div>').join('')}
+                            </div>
+                        </div>`);
+            }
+            trigger('click', {
+                action: target.dataset.action,
+                thread_id: target.dataset.threadId
+            });
+        });
+    });
+};
+bindTaskCards();
+watch('value', bindTaskCards);
+"""
+
+SHOW_WORKSPACE_JS = r"""(...args) => {
+    const workspace = document.getElementById('workspace-grid');
+    const center = document.getElementById('task-center-view');
+    const drawer = document.getElementById('task-detail-drawer');
+    const workspaceNav = document.querySelector('#workspace-nav button, #workspace-nav');
+    const centerNav = document.querySelector('#task-center-nav button, #task-center-nav');
+    const centerLoader = document.getElementById('task-center-loading-host');
+    const detailLoader = document.getElementById('task-detail-loading-host');
+    if (centerLoader) centerLoader.querySelector('.task-loading-slot')?.replaceChildren();
+    if (detailLoader) detailLoader.querySelector('.task-loading-slot')?.replaceChildren();
+    if (workspace) {
+        workspace.classList.remove('task-client-hidden');
+        workspace.style.removeProperty('display');
+    }
+    if (center) {
+        center.classList.remove('task-client-visible');
+        center.classList.add('task-client-hidden');
+        center.style.setProperty('display', 'none', 'important');
+    }
+    if (drawer) {
+        drawer.classList.remove('task-client-visible');
+        drawer.classList.add('task-client-hidden');
+        drawer.style.setProperty('display', 'none', 'important');
+    }
+    workspaceNav?.classList.add('primary');
+    centerNav?.classList.remove('primary');
+    return args;
+}"""
+
+CLOSE_TASK_DETAIL_JS = r"""() => {
+    const drawer = document.getElementById('task-detail-drawer');
+    if (drawer) {
+        drawer.classList.remove('task-client-visible');
+        drawer.classList.add('task-client-hidden');
+        drawer.style.setProperty('display', 'none', 'important');
+    }
+    return [];
+}"""
+
+SHOW_TASK_CENTER_JS = r"""(search, status, selected, page) => {
+    const workspace = document.getElementById('workspace-grid');
+    const center = document.getElementById('task-center-view');
+    const workspaceNav = document.querySelector('#workspace-nav button, #workspace-nav');
+    const centerNav = document.querySelector('#task-center-nav button, #task-center-nav');
+    const loaderHost = document.getElementById('task-center-loading-host');
+    const loaderSurface = loaderHost?.querySelector('.task-loading-slot');
+    if (loaderSurface) {
+        loaderSurface.innerHTML = `
+            <div class="task-center-loading-overlay" data-task-loader role="status" aria-live="polite">
+                <div class="task-local-loader">
+                    <div class="task-local-loader-label">正在加载任务列表…</div>
+                    <div class="task-local-skeleton"></div>
+                    <div class="task-local-skeleton"></div>
+                    <div class="task-local-skeleton"></div>
+                    <div class="task-local-skeleton"></div>
+                </div>
+            </div>`;
+        window.clearTimeout(loaderSurface._taskLoaderTimeout);
+        loaderSurface._taskLoaderTimeout = window.setTimeout(() => {
+            if (!loaderSurface.querySelector('[data-task-loader]')) return;
+            loaderSurface.innerHTML = '<div class="task-loader-error">加载超时，请重试。</div>';
+        }, 12000);
+    }
+    if (workspace) {
+        workspace.classList.add('task-client-hidden');
+        workspace.style.setProperty('display', 'none', 'important');
+    }
+    if (center) {
+        center.hidden = false;
+        center.removeAttribute('hidden');
+        center.classList.remove('hide', 'hidden', 'task-client-hidden');
+        center.classList.add('task-client-visible');
+        center.style.setProperty('display', 'flex', 'important');
+        center.style.setProperty('visibility', 'visible', 'important');
+        center.style.setProperty('opacity', '1', 'important');
+    }
+    workspaceNav?.classList.remove('primary');
+    centerNav?.classList.add('primary');
+    return [search, status, selected, page];
+}"""
+
+TASK_CENTER_FILTER_LOADING_JS = r"""(...args) => {
+    const loaderSurface = document
+        .getElementById('task-center-loading-host')
+        ?.querySelector('.task-loading-slot');
+    if (loaderSurface) {
+        loaderSurface.innerHTML = `
+            <div class="task-center-loading-overlay" data-task-loader role="status" aria-live="polite">
+                <div class="task-local-loader">
+                    <div class="task-local-loader-label">正在筛选任务列表…</div>
+                    <div class="task-local-skeleton"></div>
+                    <div class="task-local-skeleton"></div>
+                    <div class="task-local-skeleton"></div>
+                </div>
+            </div>`;
+        window.clearTimeout(loaderSurface._taskLoaderTimeout);
+        loaderSurface._taskLoaderTimeout = window.setTimeout(() => {
+            if (!loaderSurface.querySelector('[data-task-loader]')) return;
+            loaderSurface.innerHTML = '<div class="task-loader-error">加载超时，请重试。</div>';
+        }, 12000);
+    }
+    return args;
+}"""
+
+
 STATUS_LABELS = {
+    **MODE_LABELS,
     "idle": "尚未开始",
     "running": "正在执行",
     "pending": "等待审批",
@@ -1186,11 +2052,29 @@ def format_status_card(status, message):
     safe_status = status if status in STATUS_LABELS else "idle"
     label = STATUS_LABELS.get(status, status or STATUS_LABELS["idle"])
     return (
-        f'<div class="status-line status-{safe_status}">'
+        f'<div class="status-line status-{safe_status}" role="status" aria-live="polite">'
         f'<span class="status-badge">{escape(label)}</span>'
         f'<span class="status-copy">{escape(message)}</span>'
         "</div>"
     )
+
+
+MODULE_LABELS = {
+    "preflight": "环境检查",
+    "idle": "发起任务",
+    "running": "任务执行",
+    "pending": "审阅变更",
+    "validating": "应用与验证",
+    "completed": "任务完成",
+    "failed": "执行失败",
+    "rejected": "提案已拒绝",
+    "conflicted": "审批冲突",
+}
+
+
+def format_module_lockup(status):
+    label = MODULE_LABELS.get(status, MODULE_LABELS["idle"])
+    return f'<div class="module-lockup"><span class="module-name">{escape(label)}</span></div>'
 
 
 def format_topbar_context(thread_id, source):
@@ -1206,38 +2090,194 @@ def format_topbar_context(thread_id, source):
     )
 
 
-def format_review_meta(source, patch_count):
+def _unique_text(values):
+    unique = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            unique.append(text)
+    return unique
+
+
+def repair_review_context(result):
+    if result.get("proposal_source") != "repair":
+        return {"visible": False}
+
+    repair_history = result.get("repair_history", []) or []
+    repair_record = result.get("repair_result", {}) or (
+        repair_history[-1] if repair_history else {}
+    )
+    repair_round = int(
+        repair_record.get("round", result.get("repair_count", 0)) or 0
+    )
+    failed_gates = []
+    for label, key, pass_key in (
+        ("测试生成", "test_generation_result", "success"),
+        ("静态检查", "code_check_result", "success"),
+        ("Unity 编译", "compile_result", "success"),
+        ("EditMode 测试", "test_result", "success"),
+        ("代码审查", "review", "pass"),
+    ):
+        gate_result = result.get(key, {})
+        if isinstance(gate_result, dict) and gate_result and gate_result.get(pass_key) is False:
+            failed_gates.append(label)
+
+    actions = repair_record.get("actions", []) or []
+    roots = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        grouped_roots = action.get("roots")
+        if isinstance(grouped_roots, list):
+            roots.extend(root for root in grouped_roots if isinstance(root, dict))
+        elif isinstance(action.get("root"), dict):
+            roots.append(action["root"])
+    if not roots:
+        roots = [
+            root
+            for root in (result.get("root_causes", []) or [])
+            if isinstance(root, dict)
+        ]
+
+    error_codes = []
+    reasons = []
+    files = []
+    strategies = []
+    for root in roots:
+        error_codes.append(root.get("error_code", ""))
+        reasons.append(root.get("description", ""))
+        files.extend([root.get("source_file", ""), root.get("target_file", "")])
+        files.extend(root.get("related_files", []) or [])
+        fix_action = root.get("fix_action", {}) or {}
+        strategies.append(
+            root.get("fix_strategy", "")
+            or fix_action.get("details", "")
+            or fix_action.get("operation", "")
+        )
+    for action in actions:
+        if isinstance(action, dict):
+            files.extend(action.get("files", []) or [])
+
+    if not reasons:
+        review = result.get("review", {}) or {}
+        reasons.extend(review.get("remaining_issues", []) or [])
+    approval_sequence = len(result.get("approval_history", []) or []) + 1
+    return {
+        "visible": True,
+        "round": repair_round,
+        "approval_sequence": approval_sequence,
+        "failed_gates": _unique_text(failed_gates),
+        "error_codes": _unique_text(error_codes),
+        "reasons": _unique_text(reasons)[:4],
+        "files": _unique_text(files),
+        "strategies": _unique_text(strategies)[:4],
+    }
+
+
+def format_repair_context(context):
+    if not context.get("visible", False):
+        return ""
+
+    repair_round = int(context.get("round", 0) or 0)
+    approval_sequence = int(context.get("approval_sequence", 1) or 1)
+    gate_chips = "".join(
+        f'<span class="repair-chip">{escape(item)}</span>'
+        for item in context.get("failed_gates", [])
+    ) or '<span class="repair-chip">失败门禁未记录</span>'
+    code_chips = "".join(
+        f'<span class="repair-chip">{escape(item)}</span>'
+        for item in context.get("error_codes", [])
+    )
+    reasons = "".join(
+        f"<li>{escape(item)}</li>" for item in context.get("reasons", [])
+    ) or "<li>检查点未保存结构化根因，请结合 Diff 审阅本轮改动。</li>"
+    files = "、".join(escape(item) for item in context.get("files", [])) or "—"
+    strategies = "".join(
+        f"<li>{escape(item)}</li>" for item in context.get("strategies", [])
+    ) or "<li>修复策略未记录</li>"
+    return (
+        '<div class="repair-review-card">'
+        '<div class="inspector-title">本轮 Repair 原因</div>'
+        '<div class="repair-review-meta">'
+        f'<span>Repair 第 {repair_round} 轮</span>'
+        f'<span>本任务第 {approval_sequence} 次人工审批</span>'
+        '</div>'
+        '<div><div class="repair-section-label">触发门禁 / 错误代码</div>'
+        f'<div class="repair-chip-row">{gate_chips}{code_chips}</div></div>'
+        '<div><div class="repair-section-label">为什么需要再次审批</div>'
+        f'<ul>{reasons}</ul></div>'
+        '<div><div class="repair-section-label">涉及文件</div>'
+        f'<div class="repair-files">{files}</div></div>'
+        '<div><div class="repair-section-label">本轮修复策略</div>'
+        f'<ul class="repair-strategy">{strategies}</ul></div>'
+        '</div>'
+    )
+
+
+def format_review_meta(source, patch_count, repair_context=None):
     source_label = SOURCE_LABELS.get(source, source or "尚无提案")
+    repair_context = repair_context or {}
     if patch_count:
-        description = f"提案来自 {source_label}，逐个核对文件后再决定写入范围。"
+        if source == "repair" and repair_context.get("visible", False):
+            repair_round = int(repair_context.get("round", 0) or 0)
+            title = f"第 {repair_round} 轮 Repair 修复复审"
+            gates = " / ".join(repair_context.get("failed_gates", [])) or "上一轮验证"
+            description = f"上一轮未通过 {gates}；请核对修复原因与 Diff 后再决定是否继续。"
+        else:
+            title = "02 · 审阅变更"
+            description = f"提案来自 {source_label}，逐个核对文件后再决定写入范围。"
         count_label = f"{patch_count} 个文件待审批"
     else:
+        title = "02 · 审阅变更"
         description = "发起新任务，或恢复一个已经暂停的审批线程。"
         count_label = "暂无待审批变更"
     return (
         '<div class="review-heading">'
         '<div><div class="panel-eyebrow">Review workspace</div>'
-        '<div class="review-title">02 · 审阅变更</div>'
+        f'<div class="review-title">{escape(title)}</div>'
         f'<div class="review-copy">{escape(description)}</div></div>'
         f'<div class="review-count">{escape(count_label)}</div>'
         "</div>"
     )
 
 
-def format_workflow_rail(status, current_agent=""):
+def format_workflow_rail(status, current_agent="", approval_status="", failed_gate=""):
+    validation_agents = {
+        "test_generator", "code_checker", "unity_compiler", "unity_test",
+        "reviewer", "repair", "git_commit",
+    }
+    validation_failures = {
+        "test_generator", "code_checker", "unity_compiler", "unity_test",
+        "reviewer", "git",
+    }
+    error_index = -1
     if status == "running":
-        active_index = 2 if current_agent in {
-            "test_generator", "code_checker", "unity_compiler", "unity_test", "reviewer", "repair"
-        } else 0
+        active_index = 3 if current_agent in validation_agents else 0
     elif status == "pending":
         active_index = 1
-    elif status in {"approved", "partially_approved"}:
+    elif status == "validating":
+        active_index = 2 if current_agent in {"human_approval", "change_proposal"} else 3
+    elif status in {"approved", "partially_approved"} or approval_status == "applying":
         active_index = 2
     elif status == "completed":
-        active_index = 3
+        active_index = 4
+    elif status == "failed":
+        if failed_gate in validation_failures or approval_status in {"approved", "partially_approved"}:
+            active_index = 3
+            error_index = 3
+        elif failed_gate == "human_approval":
+            active_index = 1
+            error_index = 1
+        else:
+            active_index = 0
+            error_index = 0
     else:
         active_index = 0
-    error_index = 1 if status in {"rejected", "conflicted"} else -1
+    if status in {"rejected", "conflicted"}:
+        active_index = 1
+        error_index = 1
     stages = [
         ("发起任务", "生成安全变更提案"),
         ("审阅变更", "人工确认写入范围"),
@@ -1269,13 +2309,21 @@ def format_workflow_rail(status, current_agent=""):
     return '<div class="rail-title">工作流阶段</div><div class="workflow-list">' + "".join(rows) + "</div>"
 
 
-def format_progress_activity(status, current_agent="", agent_history=None):
+def current_activity_label(status, current_agent="", failed_gate=""):
+    if status == "failed" and failed_gate:
+        return f'{AGENT_LABELS.get(failed_gate, failed_gate)}失败'
+    if status == "completed":
+        return "任务完成"
+    return AGENT_LABELS.get(current_agent, current_agent or "准备中")
+
+
+def format_progress_activity(status, current_agent="", agent_history=None, failed_gate=""):
     if status == "idle":
         return '<div class="activity-empty">启动或恢复任务后，这里会显示实时执行节点。</div>'
     if status == "pending":
         current = "等待审批"
     else:
-        current = AGENT_LABELS.get(current_agent, current_agent or "准备中")
+        current = current_activity_label(status, current_agent, failed_gate)
     history = list(agent_history or [])[-3:]
     history_rows = "".join(
         f'<div class="activity-entry"><span></span>{escape(str(item))}</div>'
@@ -1290,16 +2338,217 @@ def format_progress_activity(status, current_agent="", agent_history=None):
     )
 
 
+def format_task_time(updated_at):
+    if not isinstance(updated_at, str) or not updated_at.strip():
+        return "时间未知"
+    try:
+        value = updated_at.strip()
+        if value.endswith("Z"):
+            value = value[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return "时间未知"
+
+
 def format_task_choices(tasks):
     choices = []
     for task in tasks or []:
         query = " ".join((task.get("query") or "未命名任务").split())
-        if len(query) > 26:
-            query = query[:26] + "…"
+        if len(query) > 16:
+            query = query[:16] + "…"
         status = STATUS_LABELS.get(task.get("status"), task.get("status") or "已保存")
-        short_id = (task.get("thread_id") or "")[:8]
-        choices.append((f"{query} · {status} · {short_id}", task.get("thread_id")))
+        updated_at = format_task_time(task.get("updated_at", ""))
+        choices.append(
+            (f"{updated_at[5:]} · {status} · {query}", task.get("thread_id"))
+        )
     return choices
+
+
+def format_saved_task_detail(thread_id, tasks):
+    selected = next(
+        (task for task in tasks or [] if task.get("thread_id") == thread_id),
+        None,
+    )
+    if selected is None:
+        return '<div class="saved-task-empty">选择一条任务后查看详情。</div>'
+    query = " ".join((selected.get("query") or "未命名任务").split())
+    status = STATUS_LABELS.get(
+        selected.get("status"),
+        selected.get("status") or "已保存",
+    )
+    return (
+        '<div class="saved-task-detail">'
+        f'<div class="saved-task-title">{escape(query)}</div>'
+        '<div class="saved-task-meta">'
+        f'<span>{escape(status)}</span>'
+        f'<span>{escape(format_task_time(selected.get("updated_at", "")))}</span>'
+        '</div>'
+        f'<div class="saved-task-id">ID · {escape(thread_id or "—")}</div>'
+        '</div>'
+    )
+
+
+TASK_CENTER_GROUPS = {
+    "all": "全部任务",
+    "active": "进行中",
+    "attention": "需要处理",
+    "completed": "已完成",
+}
+TASK_CENTER_PAGE_SIZE = 10
+TASK_LOADING_SLOT = '<div class="task-loading-slot"></div>'
+
+
+def task_loading_slot():
+    cycle = datetime.now(timezone.utc).isoformat()
+    return f'<div class="task-loading-slot" data-cycle="{cycle}"></div>'
+
+
+def task_center_group(status):
+    if status == "completed":
+        return "completed"
+    if status in {"failed", "conflicted", "error"}:
+        return "attention"
+    if status in {"running", "pending", "approved", "partially_approved", "preflight"}:
+        return "active"
+    return "all"
+
+
+def prepare_task_center(tasks, active_thread_id="", search="", status_filter="all"):
+    normalized_search = " ".join((search or "").lower().split())
+    prepared = []
+    for task in tasks or []:
+        item = dict(task)
+        item["is_active"] = item.get("thread_id") == active_thread_id
+        item["group"] = task_center_group(item.get("status"))
+        if normalized_search and normalized_search not in (item.get("query") or "").lower():
+            continue
+        if status_filter != "all" and item["group"] != status_filter:
+            continue
+        prepared.append(item)
+    prepared.sort(
+        key=lambda item: (not item["is_active"], item.get("updated_at", "")),
+    )
+    if prepared and not prepared[0]["is_active"]:
+        prepared.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+    elif prepared:
+        active = prepared[:1]
+        inactive = sorted(prepared[1:], key=lambda item: item.get("updated_at", ""), reverse=True)
+        prepared = active + inactive
+    return prepared
+
+
+def task_center_stats(tasks):
+    stats = {key: 0 for key in TASK_CENTER_GROUPS}
+    stats["all"] = len(tasks or [])
+    for task in tasks or []:
+        group = task_center_group(task.get("status"))
+        if group in stats and group != "all":
+            stats[group] += 1
+    return stats
+
+
+def paginate_task_center(tasks, page=1, page_size=TASK_CENTER_PAGE_SIZE):
+    total = len(tasks or [])
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    current_page = min(max(int(page or 1), 1), total_pages)
+    start = (current_page - 1) * page_size
+    return list(tasks or [])[start : start + page_size], current_page, total_pages
+
+
+def format_task_center_cards(tasks, selected_ids=None):
+    selected = set(selected_ids or [])
+    if not tasks:
+        return '<div class="task-center-empty">没有符合当前条件的任务。</div>'
+    cards = []
+    for task in tasks:
+        thread_id = task.get("thread_id", "")
+        title = " ".join((task.get("query") or "未命名任务").split())
+        status = STATUS_LABELS.get(task.get("status"), task.get("status") or "已保存")
+        current_agent = task.get("current_agent") or "等待后续操作"
+        error = " ".join((task.get("error") or "").split())
+        selectable = not task.get("is_active", False)
+        marker = "🔒" if not selectable else ("✓" if thread_id in selected else "")
+        card_class = " task-card-selected" if thread_id in selected else ""
+        if task.get("is_active"):
+            card_class += " task-card-active"
+        cards.append(
+            f'<article class="task-center-card{card_class}" data-action="detail" data-thread-id="{escape(thread_id)}">'
+            f'<button class="task-card-select" data-action="toggle" data-thread-id="{escape(thread_id)}" '
+            f'{"disabled" if not selectable else ""} aria-label="选择任务">{marker}</button>'
+            '<div class="task-card-main">'
+            f'<div class="task-card-title">{escape(title)}</div>'
+            f'<div class="task-card-copy">{escape(error or "暂无错误；可查看任务详情和执行记录。")}</div>'
+            '<div class="task-card-meta">'
+            f'<span>{escape(status)}</span><span>{escape(current_agent)}</span>'
+            f'<span>{escape(format_task_time(task.get("updated_at", "")))}</span>'
+            f'<span>Repair {int(task.get("repair_count", 0) or 0)} 轮</span>'
+            '</div></div>'
+            f'<button class="task-card-open" data-action="detail" data-thread-id="{escape(thread_id)}">查看详情</button>'
+            '</article>'
+        )
+    return '<div class="task-center-list">' + "".join(cards) + "</div>"
+
+
+def format_task_center_detail(thread_id, tasks):
+    selected = next((task for task in tasks or [] if task.get("thread_id") == thread_id), None)
+    if selected is None:
+        return '<div class="task-drawer-empty">选择一项任务查看完整信息。</div>'
+    title = " ".join((selected.get("query") or "未命名任务").split())
+    status = STATUS_LABELS.get(selected.get("status"), selected.get("status") or "已保存")
+    error = " ".join((selected.get("error") or "暂无错误记录").split())
+    return (
+        '<div class="task-drawer-content">'
+        f'<div class="task-drawer-status">{escape(status)}</div>'
+        f'<h2>{escape(title)}</h2>'
+        f'<p>{escape(error)}</p>'
+        '<dl>'
+        f'<dt>当前阶段</dt><dd>{escape(selected.get("current_agent") or "等待后续操作")}</dd>'
+        f'<dt>最后执行</dt><dd>{escape(format_task_time(selected.get("updated_at", "")))}</dd>'
+        f'<dt>Repair</dt><dd>{int(selected.get("repair_count", 0) or 0)} 轮</dd>'
+        f'<dt>已批准文件</dt><dd>{int(selected.get("approved_file_count", 0) or 0)} 个</dd>'
+        f'<dt>Git 状态</dt><dd>{escape(selected.get("git_status") or "—")}</dd>'
+        f'<dt>任务分支</dt><dd class="is-code">{escape(selected.get("git_branch") or "—")}</dd>'
+        f'<dt>基础提交</dt><dd class="is-code">{escape(selected.get("git_base_commit") or "—")}</dd>'
+        f'<dt>最终提交</dt><dd class="is-code">{escape(selected.get("git_commit_hash") or "—")}</dd>'
+        f'<dt>任务 ID</dt><dd class="is-code">{escape(thread_id or "—")}</dd>'
+        '</dl></div>'
+    )
+
+
+def task_center_action_label(status):
+    return {
+        "pending": "进入审批",
+        "failed": "处理失败任务",
+        "conflicted": "处理冲突",
+        "completed": "查看结果",
+        "rejected": "恢复任务",
+    }.get(status, "继续当前任务")
+
+
+def format_active_task_lock(view):
+    if not view.get("active_task_lock", False):
+        return ""
+    thread_id = view.get("active_thread_id", view.get("thread_id", ""))
+    updated_at = format_task_time(view.get("active_updated_at", ""))
+    if view.get("can_retry_baseline_active", False):
+        safety_copy = "激活 Unity 许可证后，在原 thread 和分支上重新检查基线；不会重新生成任务。"
+    elif view.get("can_retry_repair_active", False):
+        safety_copy = "保留原 thread、分支和已批准文件重新分析并修复，或主动放弃并安全归档。"
+    elif view.get("can_continue_active", False):
+        safety_copy = "继续原任务，或从原任务主动放弃并安全归档后再开始新任务。"
+    else:
+        safety_copy = "当前任务没有可恢复执行点；可主动放弃并安全归档后再开始新任务。"
+    return (
+        '<div class="active-task-lock">'
+        '<div class="activity-label">单活动任务锁</div>'
+        '<div class="activity-current">当前仓库已有活动任务</div>'
+        f'<div class="activity-entry is-muted"><span></span>{escape(thread_id[:8])} · {escape(updated_at)}</div>'
+        f'<div class="safety-copy">{escape(safety_copy)}</div>'
+        '</div>'
+    )
 
 
 def format_selection_summary(selected_patch_ids, total):
@@ -1337,6 +2586,48 @@ def format_proposal_info(source, thread_id, patches):
     )
 
 
+def format_git_result(view):
+    status = view.get("git_status", "") or "not_started"
+    branch = view.get("git_branch", "") or "—"
+    base_commit = view.get("git_base_commit", "") or "—"
+    commit_hash = view.get("git_commit_hash", "") or "—"
+    message = view.get("git_commit_message", "") or "—"
+    error_code = view.get("git_error_code", "")
+    error = view.get("git_error", "")
+    changed_files = view.get("git_changed_files", []) or []
+    error_row = ""
+    if error_code or error:
+        error_row = (
+            '<div><div class="proposal-label">Git error</div>'
+            f'<div class="proposal-value">{escape(error_code)} · {escape(error)}</div></div>'
+        )
+    changed_files_row = ""
+    if changed_files:
+        file_rows = "".join(
+            f'<div class="proposal-value is-code">{escape(str(file_name))}</div>'
+            for file_name in changed_files
+        )
+        changed_files_row = (
+            '<div><div class="proposal-label">待归档文件</div>'
+            f'{file_rows}</div>'
+        )
+    return (
+        '<div class="inspector-title">LOCAL GIT</div>'
+        '<div class="proposal-grid">'
+        '<div><div class="proposal-label">Status</div>'
+        f'<div class="proposal-value">{escape(status)}</div></div>'
+        '<div><div class="proposal-label">Branch</div>'
+        f'<div class="proposal-value is-code">{escape(branch)}</div></div>'
+        '<div><div class="proposal-label">Base commit</div>'
+        f'<div class="proposal-value is-code">{escape(base_commit)}</div></div>'
+        '<div><div class="proposal-label">Commit</div>'
+        f'<div class="proposal-value is-code">{escape(commit_hash)}</div></div>'
+        '<div><div class="proposal-label">Message</div>'
+        f'<div class="proposal-value">{escape(message)}</div></div>'
+        f'{error_row}{changed_files_row}</div>'
+    )
+
+
 def format_decision_hint(status):
     if status == "running":
         title = "任务正在执行"
@@ -1354,6 +2645,84 @@ def format_decision_hint(status):
         title = "等待审批请求"
         copy = "发起新任务，或从左侧恢复已有线程。"
     return f'<div class="decision-title">{escape(title)}</div><div class="decision-copy">{escape(copy)}</div>'
+
+
+def result_status(result, pass_key="success"):
+    if not isinstance(result, dict) or not result:
+        return ""
+    return "passed" if result.get(pass_key, False) else "failed"
+
+
+def workflow_summaries(result):
+    project_context = result.get("project_context", {}) or {}
+    project = project_context.get("project", {}) or {}
+    modules = project_context.get("modules", []) or []
+    graph_summary = (result.get("dependency_graph", {}) or {}).get("summary", {}) or {}
+    memory_context = result.get("memory_context", {}) or {}
+    matched_codes = memory_context.get("matched_error_codes", []) or []
+    repair_rounds = max(
+        int(result.get("repair_count", 0) or 0),
+        len(result.get("repair_history", []) or []),
+    )
+    return {
+        "project_name": str(project.get("name", "") or "—"),
+        "project_summary": f"{len(modules)} modules",
+        "dependency_summary": (
+            f'{graph_summary.get("nodes", 0)} nodes · {graph_summary.get("edges", 0)} edges'
+        ),
+        "memory_summary": ", ".join(str(code) for code in matched_codes) or "无匹配历史错误",
+        "repair_summary": f"{repair_rounds} rounds",
+    }
+
+
+def format_execution_panel(view):
+    view_state = view.get("view_state") or layout_for_mode(view.get("status", "idle"))
+    current = current_activity_label(
+        view.get("status", "idle"),
+        view.get("current_agent", ""),
+        view_state.get("failed_gate", ""),
+    )
+    gate_values = [
+        ("Unity 基线", view.get("baseline_compile_status", "")),
+        ("静态检查", view.get("code_check_status", "")),
+        ("Unity 编译", view.get("compile_status", "")),
+        ("EditMode 测试", view.get("test_status", "")),
+        ("代码审查", view.get("review_status", "")),
+        ("本地 Git", view.get("git_status", "")),
+    ]
+    gates = "".join(
+        '<div class="gate-row">'
+        f'<span>{escape(name)}</span><strong>{escape(value or "待执行")}</strong>'
+        "</div>"
+        for name, value in gate_values
+    )
+    details = "".join(
+        '<div class="detail-row">'
+        f'<span>{escape(label)}</span><strong>{escape(str(view.get(key, "—")))}</strong>'
+        "</div>"
+        for label, key in (
+            ("项目", "project_name"),
+            ("项目结构", "project_summary"),
+            ("依赖图", "dependency_summary"),
+            ("长期记忆", "memory_summary"),
+            ("Repair", "repair_summary"),
+        )
+    )
+    error = view_state.get("error_summary", "")
+    error_html = (
+        f'<div class="execution-error" role="alert">{escape(error)}</div>' if error else ""
+    )
+    return (
+        '<div class="execution-heading">'
+        '<div class="panel-eyebrow">Execution workspace</div>'
+        f'<div class="review-title">{escape(view_state["label"])}</div>'
+        f'<div class="review-copy">当前节点 · {escape(current)}</div>'
+        "</div>"
+        f'{error_html}<div class="gate-grid">{gates}</div>'
+        f'<div class="detail-grid">{details}</div>'
+        f'<div class="recovery-copy">{escape(view.get("recovery_hint", ""))}</div>'
+        '<div class="execution-boundary">只创建本地任务分支与提交；不执行 push、PR、merge、rebase 或 reset。</div>'
+    )
 
 
 def patch_choices(patches):
@@ -1382,30 +2751,289 @@ class ApprovalController:
     def start(self, query):
         if not isinstance(query, str) or not query.strip():
             raise ValueError("请输入任务需求")
+        active_view = self.active_task_view()
+        if active_view is not None:
+            active_view["message"] = "检测到尚未结束的活动任务，已恢复原任务；请继续处理或主动放弃并归档。"
+            return active_view
         thread_id = self.runtime.new_thread_id()
         result = self.runtime.invoke(self._initial_state(query.strip()), thread_id)
-        return self._view_from_result(thread_id, result)
+        return self._with_active_task(self._view_from_result(thread_id, result))
 
     def start_stream(self, query):
         if not isinstance(query, str) or not query.strip():
             raise ValueError("请输入任务需求")
+        active_view = self.active_task_view()
+        if active_view is not None:
+            active_view["message"] = "检测到尚未结束的活动任务，已恢复原任务；未创建新的任务记录。"
+            yield active_view
+            return
         thread_id = self.runtime.new_thread_id()
         state = self._initial_state(query.strip())
         yield self._view_from_result(thread_id, state, default_status="running")
         for result in self.runtime.stream(state, thread_id):
-            yield self._view_from_result(thread_id, result, default_status="running")
+            yield self._with_active_task(
+                self._view_from_result(thread_id, result, default_status="running")
+            )
 
     def list_tasks(self):
         if not hasattr(self.runtime, "list_threads"):
             return []
         return self.runtime.list_threads()
 
+    def delete_saved_task(self, thread_id, confirmed):
+        normalized_thread_id = (thread_id or "").strip()
+        if not normalized_thread_id:
+            return {
+                "success": False,
+                "error": "请先选择要删除的任务。",
+            }
+        if confirmed is not True:
+            return {
+                "success": False,
+                "error": "请先勾选确认删除。",
+            }
+        return self.runtime.delete_thread(normalized_thread_id)
+
+    def delete_saved_tasks(self, thread_ids):
+        normalized = list(dict.fromkeys(thread_ids or []))
+        if not normalized:
+            return {"success": False, "error": "请先选择要删除的任务。"}
+        if hasattr(self.runtime, "delete_threads"):
+            return self.runtime.delete_threads(normalized)
+        results = [self.runtime.delete_thread(thread_id) for thread_id in normalized]
+        failed = next((result for result in results if not result.get("success")), None)
+        return failed or {"success": True, "thread_ids": normalized, "deleted_threads": len(normalized)}
+
     def reload(self, thread_id):
         snapshot = self.runtime.get_state(thread_id)
-        return self._view_from_result(thread_id.strip(), snapshot.values)
+        return self._with_active_task(
+            self._view_from_result(thread_id.strip(), snapshot.values)
+        )
+
+    def active_task_view(self):
+        if not hasattr(self.runtime, "find_active_task"):
+            return None
+        active_task = self.runtime.find_active_task()
+        if active_task is None:
+            return None
+        snapshot = self.runtime.get_state(active_task["thread_id"])
+        return self._with_active_task(
+            self._view_from_result(active_task["thread_id"], snapshot.values),
+            active_task,
+        )
+
+    def continue_active_task(self, thread_id):
+        active_task = self.runtime.find_active_task()
+        if active_task is None:
+            raise ValueError("当前没有可继续的活动任务")
+        owner_thread_id = active_task["thread_id"]
+        return self.reload(owner_thread_id)
+
+    def continue_active_task_stream(self, thread_id):
+        active_task = self.runtime.find_active_task()
+        if active_task is None:
+            raise ValueError("当前没有可继续的活动任务")
+        owner_thread_id = active_task["thread_id"]
+        yield self.reload(owner_thread_id)
+        for result in self.runtime.continue_active_task_stream(owner_thread_id):
+            yield self._with_active_task(
+                self._view_from_result(
+                    owner_thread_id,
+                    result,
+                    default_status="running",
+                )
+            )
+
+    def retry_baseline_compile_stream(self, thread_id):
+        normalized_thread_id = thread_id.strip()
+        if not normalized_thread_id:
+            raise ValueError("当前没有可重新检查的 Unity 基线任务")
+        snapshot = self.runtime.get_state(normalized_thread_id)
+        progress = {
+            **(snapshot.values or {}),
+            "current_agent": "baseline_compiler",
+            "baseline_compile_status": "",
+            "baseline_compile_result": {},
+            "baseline_retry_result": {"success": True, "status": "retrying"},
+        }
+        yield self._with_active_task(
+            self._view_from_result(
+                normalized_thread_id,
+                progress,
+                default_status="preflight",
+            )
+        )
+        for result in self.runtime.retry_baseline_compile_stream(normalized_thread_id):
+            yield self._with_active_task(
+                self._view_from_result(
+                    normalized_thread_id,
+                    result,
+                    default_status="running",
+                )
+            )
+
+    def abandon_active_task(self, thread_id):
+        normalized_thread_id = thread_id.strip()
+        if not normalized_thread_id:
+            raise ValueError("当前没有可放弃的活动任务")
+        result = self.runtime.abandon_active_task(normalized_thread_id)
+        if not result.get("success", False) and "archive_result" not in result:
+            view = self.reload(normalized_thread_id)
+            view["message"] = f"放弃并归档失败：{result.get('error', '未知 Git 错误')}"
+            return view
+        view = self._view_from_result("", {})
+        archived = result.get("archive_result", result.get("git_result", {}))
+        view.update(
+            {
+                "git_status": "archived",
+                "git_stash_commit": archived.get("stash_commit", ""),
+                "git_stash_label": archived.get("label", ""),
+                "git_changed_files": archived.get("files", []),
+                "active_task_lock": False,
+                "can_continue_active": False,
+                "can_retry_repair_active": False,
+                "can_retry_baseline_active": False,
+                "can_abandon_active": False,
+                "message": "原任务已主动放弃，现场已安全归档；现在可以发起新任务。",
+            }
+        )
+        return view
+
+    def _with_active_task(self, view, active_task=None):
+        if not hasattr(self.runtime, "find_active_task"):
+            return view
+        active_task = active_task or self.runtime.find_active_task()
+        if active_task is None:
+            view.update(
+                {
+                    "active_task_lock": False,
+                    "can_continue_active": False,
+                    "can_retry_repair_active": False,
+                    "can_retry_baseline_active": False,
+                    "can_abandon_active": False,
+                }
+            )
+            return view
+        is_owner = view.get("thread_id") == active_task["thread_id"]
+        view.update(
+            {
+                "active_task_lock": True,
+                "active_thread_id": active_task["thread_id"],
+                "can_continue_active": is_owner and active_task.get("can_continue", False),
+                "can_retry_repair_active": (
+                    is_owner and active_task.get("can_retry_repair", False)
+                ),
+                "can_retry_baseline_active": (
+                    is_owner and active_task.get("can_retry_baseline", False)
+                ),
+                "can_abandon_active": is_owner and active_task.get("can_abandon", False),
+                "active_updated_at": active_task.get("updated_at", ""),
+            }
+        )
+        if not is_owner:
+            view["can_archive_dirty"] = False
+        return view
+
+    def archive_dirty(self, thread_id):
+        normalized_thread_id = thread_id.strip()
+        if not normalized_thread_id:
+            raise ValueError("当前没有可归档的失败任务")
+        result = self.runtime.archive_dirty_worktree(normalized_thread_id)
+        if not result.get("success", False):
+            view = self._view_from_result(
+                normalized_thread_id,
+                {
+                    "current_agent": "finish_task",
+                    "git_status": "error",
+                    "git_result": result,
+                },
+            )
+            view["message"] = f"归档失败：{result.get('error', '未知 Git 错误')}"
+            view["recovery_hint"] = "工作区未被清理；请重新载入任务并核对最新文件变化。"
+            return view
+
+        view = self._view_from_result("", {})
+        view.update(
+            {
+                "git_status": "archived",
+                "git_stash_commit": result.get("stash_commit", ""),
+                "git_stash_label": result.get("label", ""),
+                "git_changed_files": result.get("files", []),
+                "can_archive_dirty": False,
+                "message": "失败现场已安全归档，Git 工作区已恢复干净，可以发起新任务。",
+                "recovery_hint": (
+                    f"归档标识：{result.get('label', '—')}；"
+                    f"stash commit：{result.get('stash_commit', '—')}"
+                ),
+            }
+        )
+        return view
+
+    def retry_test_generation_stream(self, thread_id):
+        normalized_thread_id = thread_id.strip()
+        if not normalized_thread_id:
+            raise ValueError("当前没有可恢复的测试生成任务")
+        snapshot = self.runtime.get_state(normalized_thread_id)
+        progress = {
+            **(snapshot.values or {}),
+            "current_agent": "test_generator",
+            "test_generation_result": {},
+            "retry_result": {"success": True, "status": "retrying"},
+        }
+        yield self._view_from_result(
+            normalized_thread_id,
+            progress,
+            default_status="running",
+        )
+        for result in self.runtime.retry_test_generation_stream(normalized_thread_id):
+            yield self._view_from_result(
+                normalized_thread_id,
+                result,
+                default_status="running",
+            )
+
+    def retry_failed_repair_stream(self, thread_id):
+        normalized_thread_id = thread_id.strip()
+        if not normalized_thread_id:
+            raise ValueError("当前没有可重新修复的任务")
+        snapshot = self.runtime.get_state(normalized_thread_id)
+        progress = {
+            **(snapshot.values or {}),
+            "current_agent": "reviewer",
+            "review": {},
+            "root_causes": [],
+            "repair_count": 0,
+            "repair_retry_result": {"success": True, "status": "retrying"},
+        }
+        yield self._with_active_task(
+            self._view_from_result(
+                normalized_thread_id,
+                progress,
+                default_status="running",
+            )
+        )
+        for result in self.runtime.retry_failed_repair_stream(normalized_thread_id):
+            yield self._with_active_task(
+                self._view_from_result(
+                    normalized_thread_id,
+                    result,
+                    default_status="running",
+                )
+            )
 
     def accept_all(self, thread_id, bundle_id, note):
         return self._decide(
+            thread_id,
+            {
+                "bundle_id": bundle_id,
+                "action": "approve",
+                "mode": "batch",
+                "note": note or "",
+            },
+        )
+
+    def accept_all_stream(self, thread_id, bundle_id, note):
+        yield from self._decide_stream(
             thread_id,
             {
                 "bundle_id": bundle_id,
@@ -1438,11 +3066,45 @@ class ApprovalController:
             },
         )
 
+    def accept_selected_stream(self, thread_id, bundle_id, patch_ids, note):
+        yield from self._decide_stream(
+            thread_id,
+            {
+                "bundle_id": bundle_id,
+                "action": "approve",
+                "mode": "selected",
+                "accepted_patch_ids": list(patch_ids or []),
+                "note": note or "",
+            },
+        )
+
     def _decide(self, thread_id, decision):
         if not decision.get("bundle_id"):
             raise ValueError("当前没有可审批的变更包")
         result = self.runtime.resume(thread_id, decision)
         return self._view_from_result(thread_id.strip(), result)
+
+    def _decide_stream(self, thread_id, decision):
+        if not decision.get("bundle_id"):
+            raise ValueError("当前没有可审批的变更包")
+        normalized_thread_id = thread_id.strip()
+        snapshot = self.runtime.get_state(normalized_thread_id)
+        progress = {
+            **(snapshot.values or {}),
+            "approval_status": "applying",
+            "current_agent": "human_approval",
+        }
+        yield self._view_from_result(
+            normalized_thread_id,
+            progress,
+            default_status="running",
+        )
+        for result in self.runtime.resume_stream(normalized_thread_id, decision):
+            yield self._view_from_result(
+                normalized_thread_id,
+                result,
+                default_status="running",
+            )
 
     @staticmethod
     def _initial_state(query):
@@ -1463,17 +3125,83 @@ class ApprovalController:
     @classmethod
     def _view_from_result(cls, thread_id, result, default_status="completed"):
         request = cls._interrupt_request(result) or result.get("approval_request", {})
-        status = result.get("approval_status", request.get("status", ""))
-        if not status:
-            status = "completed" if result.get("current_agent") == "finish_task" else default_status
+        approval_status = result.get("approval_status", request.get("status", ""))
+        mapped_state = {
+            **result,
+            "approval_status": approval_status,
+        }
+        if not mapped_state.get("current_agent") and default_status == "running":
+            mapped_state["current_agent"] = "starting"
+        view_state = map_agent_state(mapped_state)
+        status = view_state["mode"]
         approval_result = result.get("approval_result", {})
-        patches = request.get("patches", []) if status == "pending" else []
+        retry_result = result.get("retry_result", {}) or {}
+        repair_retry_result = result.get("repair_retry_result", {}) or {}
+        baseline_retry_result = result.get("baseline_retry_result", {}) or {}
+        continue_result = result.get("continue_result", {}) or {}
+        git_result = result.get("git_result", {}) or {}
+        git_status = result.get("git_status", "")
+        patches = request.get("patches", []) if approval_status == "pending" else []
         selected = [patch["patch_id"] for patch in patches]
         message = cls._status_message(status, approval_result)
+        if approval_status == "applying":
+            message = "正在原子应用已批准的文件；完成后将逐项显示验证进度。"
+        if (
+            retry_result.get("status") == "retrying"
+            and result.get("current_agent") == "test_generator"
+        ):
+            message = "正在沿用当前任务与审批结果重新生成 EditMode 测试。"
+        if retry_result.get("success") is False and retry_result.get("error"):
+            message = f"恢复失败：{retry_result['error']}"
+        if (
+            repair_retry_result.get("status") == "retrying"
+            and result.get("current_agent") in {"reviewer", "repair"}
+        ):
+            message = "正在保留当前任务和已批准文件，重新分析失败根因并生成 Repair 提案。"
+        if repair_retry_result.get("success") is False and repair_retry_result.get("error"):
+            message = f"重新修复失败：{repair_retry_result['error']}"
+        if (
+            baseline_retry_result.get("status") == "retrying"
+            and result.get("current_agent") == "baseline_compiler"
+        ):
+            message = "正在原任务上重新检查 Unity 编译基线。"
+        if baseline_retry_result.get("success") is False and baseline_retry_result.get("error"):
+            message = f"重新检查 Unity 基线失败：{baseline_retry_result['error']}"
+        if continue_result.get("success") is False and continue_result.get("error"):
+            message = f"继续任务失败：{continue_result['error']}"
+        if view_state["error_summary"]:
+            message = f"{message} {view_state['error_summary']}"
+        if git_status == "error" and git_result.get("error"):
+            git_message = str(git_result["error"])
+            if git_message not in message:
+                message = f"{message} Git: {git_message}"
+        resumable = approval_status == "pending" and bool(request.get("bundle_id"))
+        can_retry_test_generation = cls._can_retry_test_generation(result)
+        can_retry_failed_repair = cls._can_retry_failed_repair(result)
+        can_retry_baseline_compile = cls._can_retry_baseline_compile(result)
+        if resumable:
+            recovery_hint = "该任务停在审批检查点，可从 SQLite 状态安全恢复并继续决策。"
+        elif can_retry_test_generation:
+            recovery_hint = "生产代码与审批结果已保留；可点击“重试生成测试”从失败节点继续。"
+        elif can_retry_failed_repair:
+            recovery_hint = "当前 thread、分支和已批准文件已保留；可点击“重新修复当前任务”继续。"
+        elif can_retry_baseline_compile:
+            recovery_hint = "这是 Unity 环境故障；激活许可证后可在原任务上重新检查基线。"
+        elif status in {"failed", "rejected", "conflicted"}:
+            recovery_hint = "当前任务不可安全重跑；处理原因后请发起新任务。"
+        else:
+            recovery_hint = ""
         return {
             "thread_id": thread_id,
             "bundle_id": request.get("bundle_id", approval_result.get("bundle_id", "")),
             "status": status,
+            "approval_status": approval_status,
+            "view_state": view_state,
+            "resumable": resumable,
+            "can_retry_test_generation": can_retry_test_generation,
+            "can_retry_failed_repair": can_retry_failed_repair,
+            "can_retry_baseline_compile": can_retry_baseline_compile,
+            "recovery_hint": recovery_hint,
             "source": request.get("source", ""),
             "patches": patches,
             "selected_patch_ids": selected,
@@ -1482,7 +3210,97 @@ class ApprovalController:
             "query": result.get("query", ""),
             "current_agent": result.get("current_agent", ""),
             "agent_history": result.get("agent_history", []),
+            "git_status": git_status,
+            "git_branch": result.get("git_branch", git_result.get("branch", "")),
+            "git_base_commit": result.get(
+                "git_base_commit",
+                git_result.get("base_commit", ""),
+            ),
+            "git_commit_hash": git_result.get("commit_hash", ""),
+            "git_commit_message": git_result.get("message", ""),
+            "git_error_code": git_result.get("error_code", ""),
+            "git_error": git_result.get("error", ""),
+            "git_changed_files": list(git_result.get("changed_files", []) or []),
+            "git_stash_commit": git_result.get("stash_commit", ""),
+            "git_stash_label": git_result.get("label", ""),
+            "can_archive_dirty": (
+                git_status == "error"
+                and git_result.get("error_code") == "DIRTY_BASELINE"
+                and bool(git_result.get("changed_files"))
+            ),
+            "baseline_compile_status": result.get("baseline_compile_status", ""),
+            "code_check_status": result_status(result.get("code_check_result", {})),
+            "compile_status": result_status(result.get("compile_result", {})),
+            "test_status": result_status(result.get("test_result", {})),
+            "review_status": result_status(result.get("review", {}), pass_key="pass"),
+            "repair_context": repair_review_context(result),
+            **workflow_summaries(result),
         }
+
+    @staticmethod
+    def _can_retry_test_generation(result):
+        generation = result.get("test_generation_result", {})
+        errors = [str(error) for error in generation.get("errors", [])]
+        legacy_parse_error = any(
+            error.startswith("Unable to parse generated tests:")
+            or error == "Test Generator did not return JSON"
+            for error in errors
+        )
+        return (
+            result.get("current_agent") == "finish_task"
+            and result.get("approval_status") in {"approved", "partially_approved"}
+            and result.get("proposal_source") == "coder"
+            and result.get("git_status") == "prepared"
+            and not generation.get("success", False)
+            and (
+                generation.get("error_code") == "MODEL_OUTPUT_PARSE_ERROR"
+                or generation.get("retryable") is True
+                or legacy_parse_error
+            )
+        )
+
+    @staticmethod
+    def _can_retry_failed_repair(result):
+        compile_result = result.get("compile_result", {}) or {}
+        test_result = result.get("test_result", {}) or {}
+        if compile_result.get("system_error") or test_result.get("system_error"):
+            return False
+        failed_results = (
+            result.get("code_check_result", {}),
+            compile_result,
+            test_result,
+        )
+        code_gate_failed = any(
+            isinstance(gate_result, dict)
+            and bool(gate_result)
+            and gate_result.get("success") is False
+            for gate_result in failed_results
+        )
+        review = result.get("review", {}) or {}
+        review_failed = isinstance(review, dict) and bool(review) and review.get("pass") is False
+        return (
+            result.get("current_agent") == "finish_task"
+            and result.get("approval_status") in {
+                "approved",
+                "partially_approved",
+                "no_changes",
+            }
+            and result.get("proposal_source") == "repair"
+            and result.get("git_status") == "prepared"
+            and bool(result.get("approved_changes"))
+            and (code_gate_failed or review_failed)
+        )
+
+    @staticmethod
+    def _can_retry_baseline_compile(result):
+        baseline = result.get("baseline_compile_result", {}) or {}
+        return (
+            result.get("current_agent") == "finish_task"
+            and result.get("git_status") == "prepared"
+            and result.get("baseline_compile_status") == "failed"
+            and baseline.get("success") is False
+            and baseline.get("system_error") is True
+        )
 
     @staticmethod
     def _interrupt_request(result):
@@ -1500,19 +3318,22 @@ class ApprovalController:
         if approval_result.get("already_decided", False):
             return f"{status}: 该审批已处理，没有重复应用变更。"
         messages = {
+            "preflight": "正在检查 Git 与 Unity 编译基线。",
             "running": "任务正在执行；节点进度会在左侧实时更新。",
             "pending": "工作流已暂停，等待人工审批。",
+            "validating": "变更已处理，正在执行静态检查、Unity 验证与本地提交门禁。",
             "approved": "全部变更已批准并应用，工作流已继续。",
             "partially_approved": "所选变更已原子应用，工作流已继续。",
             "rejected": "变更已拒绝，未写入生产文件。",
             "conflicted": "源文件已变化，审批冲突且未写入任何变更。",
             "completed": "工作流已完成。",
+            "failed": "工作流未通过完成门禁。",
         }
         return messages.get(status, f"工作流状态：{status}")
 
 
 def build_approval_app(controller, initial_view=None):
-    initial_view = initial_view or {
+    initial_view = initial_view or controller.active_task_view() or {
         "thread_id": "",
         "bundle_id": "",
         "status": "idle",
@@ -1524,6 +3345,25 @@ def build_approval_app(controller, initial_view=None):
         "query": "",
         "current_agent": "",
         "agent_history": [],
+        "git_status": "",
+        "git_branch": "",
+        "git_base_commit": "",
+        "git_commit_hash": "",
+        "git_commit_message": "",
+        "git_error_code": "",
+        "git_error": "",
+        "git_changed_files": [],
+        "git_stash_commit": "",
+        "git_stash_label": "",
+        "can_archive_dirty": False,
+        "can_retry_test_generation": False,
+        "can_retry_failed_repair": False,
+        "can_retry_baseline_compile": False,
+        "active_task_lock": False,
+        "can_continue_active": False,
+        "can_retry_repair_active": False,
+        "can_retry_baseline_active": False,
+        "can_abandon_active": False,
     }
     initial_choices = patch_choices(initial_view["patches"])
     initial_patch = (
@@ -1532,7 +3372,9 @@ def build_approval_app(controller, initial_view=None):
         else None
     )
     initial_pending = initial_view["status"] == "pending"
+    initial_layout = initial_view.get("view_state") or layout_for_mode(initial_view["status"])
     initial_tasks = format_task_choices(controller.list_tasks())
+    initial_saved_tasks = controller.list_tasks()
 
     with gr.Blocks(
         title="LangGraph Coding Agent · 人工审批",
@@ -1548,8 +3390,11 @@ def build_approval_app(controller, initial_view=None):
                 '<div class="brand-subtitle">NEURAL CONTROL DECK</div>',
                 elem_id="brand-lockup",
             )
-            gr.HTML(
-                '<div class="module-lockup"><span class="module-name">人工审批</span></div>',
+            with gr.Row(elem_id="primary-navigation"):
+                workspace_nav = gr.Button("工作台", size="sm", variant="primary", elem_id="workspace-nav")
+                task_center_nav = gr.Button("任务中心", size="sm", elem_id="task-center-nav")
+            module_lockup = gr.HTML(
+                format_module_lockup(initial_view["status"]),
                 elem_id="module-lockup",
             )
             status = gr.HTML(
@@ -1562,12 +3407,14 @@ def build_approval_app(controller, initial_view=None):
                 scale=1,
             )
 
-        with gr.Row(elem_id="workspace-grid"):
+        with gr.Row(elem_id="workspace-grid") as workspace_grid:
             with gr.Column(scale=2, elem_id="left-rail"):
                 workflow = gr.HTML(
                     format_workflow_rail(
                         initial_view["status"],
                         initial_view.get("current_agent", ""),
+                        initial_view.get("approval_status", ""),
+                        (initial_view.get("view_state") or {}).get("failed_gate", ""),
                     ),
                     elem_id="workflow-rail",
                 )
@@ -1576,79 +3423,172 @@ def build_approval_app(controller, initial_view=None):
                         initial_view["status"],
                         initial_view.get("current_agent", ""),
                         initial_view.get("agent_history", []),
+                        (initial_view.get("view_state") or {}).get("failed_gate", ""),
                     ),
                     elem_id="progress-activity",
                 )
-                with gr.Accordion("发起新任务", open=True, elem_id="new-task-drawer"):
-                    query = gr.Textbox(
-                        label="任务需求",
-                        placeholder="例如：设计 Unity 背包系统并生成代码",
-                        lines=3,
+                with gr.Group(
+                    visible=initial_view.get("active_task_lock", False),
+                    elem_id="active-task-lock",
+                ) as active_task_lock:
+                    active_task_notice = gr.HTML(format_active_task_lock(initial_view))
+                    continue_active = gr.Button(
+                        "继续当前任务",
+                        variant="primary",
+                        visible=initial_view.get("can_continue_active", False),
+                        elem_id="continue-active-task",
                     )
-                    start_button = gr.Button("开始并生成提案", variant="primary")
-                with gr.Accordion("恢复已有任务", open=False, elem_id="recovery-drawer"):
+                    retry_failed_repair = gr.Button(
+                        "重新修复当前任务",
+                        variant="primary",
+                        visible=initial_view.get("can_retry_repair_active", False),
+                        elem_id="retry-failed-repair",
+                    )
+                    retry_baseline_compile = gr.Button(
+                        "重新检查 Unity 基线",
+                        variant="primary",
+                        visible=initial_view.get("can_retry_baseline_active", False),
+                        elem_id="retry-baseline-compile",
+                    )
+                    abandon_active = gr.Button(
+                        "主动放弃并归档",
+                        variant="stop",
+                        visible=initial_view.get("can_abandon_active", False),
+                        elem_id="abandon-active-task",
+                    )
+                with gr.Accordion("恢复已有任务", open=False, visible=False, elem_id="recovery-drawer"):
                     recovery_task = gr.Dropdown(
                         label="已保存任务",
                         choices=initial_tasks,
                         value=initial_view["thread_id"] or None,
                         info="任务会自动保存，无需记忆 ID。",
                     )
+                    saved_task_detail = gr.HTML(
+                        format_saved_task_detail(
+                            initial_view["thread_id"] or None,
+                            initial_saved_tasks,
+                        ),
+                        elem_id="saved-task-detail",
+                        apply_default_css=False,
+                    )
                     reload_button = gr.Button("恢复所选任务")
+                    delete_saved_task_confirm = gr.Checkbox(
+                        label="确认仅删除这条任务记录",
+                        value=False,
+                        elem_id="delete-saved-task-confirm",
+                    )
+                    delete_saved_task = gr.Button(
+                        "删除所选任务",
+                        variant="stop",
+                        elem_id="delete-saved-task",
+                    )
+                    saved_task_feedback = gr.HTML(
+                        "",
+                        elem_id="saved-task-feedback",
+                        apply_default_css=False,
+                    )
+                open_task_center = gr.Button("前往任务中心", elem_id="open-task-center")
                 thread_id = gr.State(initial_view["thread_id"])
 
             with gr.Column(scale=8, elem_id="review-stage"):
-                review_meta = gr.HTML(
-                    format_review_meta(
-                        initial_view["source"],
-                        len(initial_view["patches"]),
-                    ),
-                    elem_id="review-meta",
-                )
-                with gr.Row(elem_id="review-workspace"):
-                    with gr.Column(scale=2, elem_id="file-panel"):
-                        gr.HTML(
-                            '<div class="file-heading-row">'
-                            '<span class="file-heading-title">变更文件</span>'
-                            '<span class="file-heading-subtitle">逐文件审阅</span>'
-                            "</div>",
-                            elem_id="file-heading",
+                with gr.Group(
+                    visible=initial_layout["show_task_entry"],
+                    elem_id="task-entry-panel",
+                ) as task_entry_panel:
+                    gr.HTML(
+                        '<div class="execution-heading"><div class="panel-eyebrow">New task</div>'
+                        '<div class="review-title">启动安全代码任务</div>'
+                        '<div class="review-copy">描述目标。系统会先检查 Git 与 Unity 基线，再生成可逐文件审批的提案。</div></div>',
+                        elem_id="task-entry-heading",
+                    )
+                    with gr.Accordion("任务要求", open=True, elem_id="new-task-drawer"):
+                        query = gr.Textbox(
+                            label="任务需求",
+                            placeholder="例如：设计 Unity 背包系统并生成代码",
+                            lines=5,
                         )
-                        patch_picker = gr.Dropdown(
-                            label="当前查看文件",
-                            choices=initial_choices,
-                            value=initial_patch,
-                            interactive=initial_pending,
-                            elem_id="patch-picker",
-                        )
-                        selected_patches = gr.CheckboxGroup(
-                            label="准备批准的文件",
-                            choices=initial_choices,
-                            value=initial_view["selected_patch_ids"],
-                            info="所选文件将作为一个原子批次应用。",
-                            interactive=initial_pending,
-                            elem_id="selected-patches",
-                        )
-                        selection_summary = gr.HTML(
-                            format_selection_summary(
-                                initial_view["selected_patch_ids"],
-                                len(initial_view["patches"]),
-                            ),
-                            elem_id="selection-summary",
-                        )
-                    with gr.Column(scale=6, elem_id="diff-panel"):
-                        diff = gr.Code(
-                            label="统一 Diff · 只读",
-                            language=None,
-                            lines=30,
-                            max_lines=50,
-                            interactive=False,
-                            value=initial_view["diff"],
-                            show_line_numbers=True,
-                            elem_id="diff-view",
+                        start_button = gr.Button(
+                            "开始并生成提案",
+                            variant="primary",
+                            interactive=not initial_view.get("active_task_lock", False),
                         )
 
-            with gr.Column(scale=3, elem_id="right-inspector"):
-                with gr.Group(elem_id="proposal-card"):
+                with gr.Group(
+                    visible=initial_layout["show_validation"] or initial_layout["mode"] in {"preflight", "running"},
+                    elem_id="execution-panel",
+                ) as execution_panel:
+                    execution_detail = gr.HTML(
+                        format_execution_panel(initial_view),
+                        elem_id="execution-detail",
+                    )
+                    retry_test_generation = gr.Button(
+                        "重试生成测试",
+                        variant="primary",
+                        visible=initial_view.get("can_retry_test_generation", False),
+                        elem_id="retry-test-generation",
+                    )
+
+                with gr.Group(
+                    visible=initial_layout["show_review"],
+                    elem_id="review-workspace-shell",
+                ) as review_workspace_shell:
+                    review_meta = gr.HTML(
+                        format_review_meta(
+                            initial_view["source"],
+                            len(initial_view["patches"]),
+                            initial_view.get("repair_context", {}),
+                        ),
+                        elem_id="review-meta",
+                    )
+                    with gr.Row(elem_id="review-workspace"):
+                        with gr.Column(scale=2, elem_id="file-panel"):
+                            gr.HTML(
+                                '<div class="file-heading-row">'
+                                '<span class="file-heading-title">变更文件</span>'
+                                '<span class="file-heading-subtitle">逐文件审阅</span>'
+                                "</div>",
+                                elem_id="file-heading",
+                            )
+                            patch_picker = gr.Dropdown(
+                                label="当前查看文件",
+                                choices=initial_choices,
+                                value=initial_patch,
+                                interactive=initial_pending,
+                                elem_id="patch-picker",
+                            )
+                            selected_patches = gr.CheckboxGroup(
+                                label="准备批准的文件",
+                                choices=initial_choices,
+                                value=initial_view["selected_patch_ids"],
+                                info="所选文件将作为一个原子批次应用。",
+                                interactive=initial_pending,
+                                elem_id="selected-patches",
+                            )
+                            selection_summary = gr.HTML(
+                                format_selection_summary(
+                                    initial_view["selected_patch_ids"],
+                                    len(initial_view["patches"]),
+                                ),
+                                elem_id="selection-summary",
+                            )
+                        with gr.Column(scale=6, elem_id="diff-panel"):
+                            diff = gr.Code(
+                                label="统一 Diff · 只读",
+                                language=None,
+                                lines=30,
+                                max_lines=50,
+                                interactive=False,
+                                value=initial_view["diff"],
+                                show_line_numbers=True,
+                                elem_id="diff-view",
+                            )
+
+            with gr.Column(
+                scale=3,
+                visible=initial_layout["show_review"] or initial_layout["show_git"],
+                elem_id="right-inspector",
+            ) as right_inspector:
+                with gr.Group(visible=initial_layout["show_review"], elem_id="proposal-card") as proposal_card:
                     proposal_info = gr.HTML(
                         format_proposal_info(
                             initial_view["source"],
@@ -1657,7 +3597,30 @@ def build_approval_app(controller, initial_view=None):
                         ),
                         elem_id="proposal-info",
                     )
-                with gr.Group(elem_id="note-card"):
+                with gr.Group(
+                    visible=(
+                        initial_layout["show_review"]
+                        and initial_view.get("repair_context", {}).get("visible", False)
+                    ),
+                    elem_id="repair-context-card",
+                ) as repair_context_card:
+                    repair_context_info = gr.HTML(
+                        format_repair_context(initial_view.get("repair_context", {})),
+                        elem_id="repair-context-info",
+                        apply_default_css=False,
+                    )
+                with gr.Group(visible=initial_layout["show_git"], elem_id="git-card") as git_card:
+                    git_info = gr.HTML(
+                        format_git_result(initial_view),
+                        elem_id="git-info",
+                    )
+                    archive_dirty = gr.Button(
+                        "归档失败现场并清理工作区",
+                        variant="secondary",
+                        visible=initial_view.get("can_archive_dirty", False),
+                        elem_id="archive-dirty-worktree",
+                    )
+                with gr.Group(visible=initial_layout["show_review"], elem_id="note-card") as note_card:
                     gr.HTML('<div class="inspector-title">审批备注 · 可选</div>')
                     note = gr.Textbox(
                         label="",
@@ -1674,7 +3637,7 @@ def build_approval_app(controller, initial_view=None):
                         elem_id="safety-note",
                     )
 
-        with gr.Row(elem_id="decision-bar"):
+        with gr.Row(visible=initial_layout["show_decision_bar"], elem_id="decision-bar") as decision_bar:
             decision_hint = gr.HTML(
                 format_decision_hint(initial_view["status"]),
                 elem_id="decision-hint",
@@ -1699,10 +3662,99 @@ def build_approval_app(controller, initial_view=None):
                     elem_id="reject-all",
                 )
 
+        task_center_source = prepare_task_center(
+            initial_saved_tasks,
+            initial_view.get("active_thread_id", initial_view.get("thread_id", ""))
+            if initial_view.get("active_task_lock", False)
+            else "",
+        )
+        task_center_counts = task_center_stats(initial_saved_tasks)
+        task_center_page_items, initial_task_page, initial_task_pages = paginate_task_center(
+            task_center_source
+        )
+        task_center_selected = gr.State([])
+        task_center_detail_id = gr.State("")
+        task_center_filter = gr.State("all")
+        task_center_page = gr.State(initial_task_page)
+        task_center_loading_host = gr.HTML(
+            TASK_LOADING_SLOT, elem_id="task-center-loading-host", apply_default_css=False
+        )
+        task_detail_loading_host = gr.HTML(
+            TASK_LOADING_SLOT, elem_id="task-detail-loading-host", apply_default_css=False
+        )
+        with gr.Group(visible=False, elem_id="task-center-view") as task_center_view:
+            gr.HTML(
+                '<div class="task-center-heading"><div class="panel-eyebrow">TASK CENTER</div>'
+                '<h1>任务中心</h1><p>恢复、检查和清理工作流历史；活动任务始终受安全锁保护。</p></div>',
+                apply_default_css=False,
+            )
+            with gr.Row(elem_id="task-center-stats"):
+                stats_all = gr.Button(f"全部任务  {task_center_counts['all']}")
+                stats_active = gr.Button(f"进行中  {task_center_counts['active']}")
+                stats_attention = gr.Button(f"需要处理  {task_center_counts['attention']}")
+                stats_completed = gr.Button(f"已完成  {task_center_counts['completed']}")
+            with gr.Row(elem_id="task-center-filters"):
+                task_search = gr.Textbox(
+                    label="搜索任务",
+                    placeholder="输入任务名称",
+                    scale=3,
+                    elem_id="task-center-search",
+                )
+                task_status = gr.Dropdown(
+                    label="状态",
+                    choices=[(label, key) for key, label in TASK_CENTER_GROUPS.items()],
+                    value="all",
+                    scale=1,
+                    elem_id="task-center-status",
+                )
+                task_refresh = gr.Button("刷新列表", scale=1, elem_id="task-center-refresh")
+            task_cards = gr.HTML(
+                format_task_center_cards(task_center_page_items),
+                elem_id="task-center-cards",
+                apply_default_css=False,
+                js_on_load=TASK_CENTER_CARD_JS,
+            )
+            with gr.Row(elem_id="task-center-pagination"):
+                select_task_page = gr.Button("全选本页", elem_id="task-select-page")
+                previous_task_page = gr.Button(
+                    "上一页", interactive=initial_task_page > 1, elem_id="task-page-previous"
+                )
+                task_page_info = gr.Markdown(
+                    f"第 {initial_task_page} / {initial_task_pages} 页",
+                    elem_id="task-page-info",
+                )
+                next_task_page = gr.Button(
+                    "下一页",
+                    interactive=initial_task_page < initial_task_pages,
+                    elem_id="task-page-next",
+                )
+            with gr.Row(visible=False, elem_id="task-selection-bar") as task_selection_bar:
+                task_selection_summary = gr.Markdown("已选择 0 项", elem_id="task-selection-summary")
+                clear_task_selection = gr.Button("取消选择")
+                request_batch_delete = gr.Button("删除选中任务", variant="stop")
+
+        with gr.Group(visible=False, elem_id="task-detail-drawer") as task_detail_drawer:
+            task_detail = gr.HTML(
+                format_task_center_detail("", initial_saved_tasks),
+                elem_id="task-detail-content",
+                apply_default_css=False,
+            )
+            open_selected_task = gr.Button("在工作台打开", variant="primary")
+            delete_detail_task = gr.Button("删除任务记录", variant="stop")
+            close_task_detail = gr.Button("关闭")
+
+        with gr.Group(visible=False, elem_id="task-delete-confirm") as task_delete_confirm:
+            delete_confirm_copy = gr.HTML("", elem_id="task-delete-confirm-copy", apply_default_css=False)
+            confirm_batch_delete = gr.Button("确认删除任务记录", variant="stop")
+            cancel_batch_delete = gr.Button("取消")
+            task_delete_feedback = gr.HTML("", elem_id="task-delete-feedback", apply_default_css=False)
+
         def render(view):
             choices = patch_choices(view["patches"])
             first = view["selected_patch_ids"][0] if view["selected_patch_ids"] else None
             pending = view["status"] == "pending"
+            layout = view.get("view_state") or layout_for_mode(view["status"])
+            show_execution = layout["show_validation"] or layout["mode"] in {"preflight", "running"}
             tasks = controller.list_tasks()
             if view["thread_id"] and not any(
                 task.get("thread_id") == view["thread_id"] for task in tasks
@@ -1719,16 +3771,62 @@ def build_approval_app(controller, initial_view=None):
                 view["thread_id"],
                 view["bundle_id"],
                 view["patches"],
+                format_module_lockup(view["status"]),
                 format_status_card(view["status"], view["message"]),
                 format_topbar_context(view["thread_id"], view["source"]),
-                format_workflow_rail(view["status"], view.get("current_agent", "")),
+                format_workflow_rail(
+                    view["status"],
+                    view.get("current_agent", ""),
+                    view.get("approval_status", ""),
+                    (view.get("view_state") or {}).get("failed_gate", ""),
+                ),
                 format_progress_activity(
                     view["status"],
                     view.get("current_agent", ""),
                     view.get("agent_history", []),
+                    (view.get("view_state") or {}).get("failed_gate", ""),
                 ),
-                format_review_meta(view["source"], len(view["patches"])),
+                format_active_task_lock(view),
+                gr.update(visible=view.get("active_task_lock", False)),
+                gr.update(
+                    visible=view.get("can_continue_active", False),
+                    interactive=view.get("can_continue_active", False),
+                ),
+                gr.update(
+                    visible=view.get("can_retry_repair_active", False),
+                    interactive=view.get("can_retry_repair_active", False),
+                ),
+                gr.update(
+                    visible=view.get("can_retry_baseline_active", False),
+                    interactive=view.get("can_retry_baseline_active", False),
+                ),
+                gr.update(
+                    visible=view.get("can_abandon_active", False),
+                    interactive=view.get("can_abandon_active", False),
+                ),
+                format_execution_panel(view),
+                gr.update(
+                    visible=view.get("can_retry_test_generation", False),
+                    interactive=view.get("can_retry_test_generation", False),
+                ),
+                format_review_meta(
+                    view["source"],
+                    len(view["patches"]),
+                    view.get("repair_context", {}),
+                ),
                 format_proposal_info(view["source"], view["thread_id"], view["patches"]),
+                format_repair_context(view.get("repair_context", {})),
+                gr.update(
+                    visible=(
+                        layout["show_review"]
+                        and view.get("repair_context", {}).get("visible", False)
+                    )
+                ),
+                format_git_result(view),
+                gr.update(
+                    visible=view.get("can_archive_dirty", False),
+                    interactive=view.get("can_archive_dirty", False),
+                ),
                 format_decision_hint(view["status"]),
                 gr.update(choices=choices, value=first, interactive=pending),
                 gr.update(
@@ -1746,18 +3844,40 @@ def build_approval_app(controller, initial_view=None):
                     choices=format_task_choices(tasks),
                     value=view["thread_id"] or None,
                 ),
+                gr.update(visible=layout["show_task_entry"]),
+                gr.update(visible=show_execution),
+                gr.update(visible=layout["show_review"]),
+                gr.update(visible=layout["show_review"] or layout["show_git"]),
+                gr.update(visible=layout["show_review"]),
+                gr.update(visible=layout["show_git"]),
+                gr.update(visible=layout["show_review"]),
+                gr.update(visible=layout["show_decision_bar"]),
+                gr.update(interactive=not view.get("active_task_lock", False)),
             )
 
         outputs = [
             thread_id,
             bundle_state,
             patches_state,
+            module_lockup,
             status,
             topbar_context,
             workflow,
             progress_activity,
+            active_task_notice,
+            active_task_lock,
+            continue_active,
+            retry_failed_repair,
+            retry_baseline_compile,
+            abandon_active,
+            execution_detail,
+            retry_test_generation,
             review_meta,
             proposal_info,
+            repair_context_info,
+            repair_context_card,
+            git_info,
+            archive_dirty,
             decision_hint,
             patch_picker,
             selected_patches,
@@ -1768,6 +3888,15 @@ def build_approval_app(controller, initial_view=None):
             accept_selected,
             reject_all,
             recovery_task,
+            task_entry_panel,
+            execution_panel,
+            review_workspace_shell,
+            right_inspector,
+            proposal_card,
+            git_card,
+            note_card,
+            decision_bar,
+            start_button,
         ]
 
         def start_view(task_query):
@@ -1777,25 +3906,383 @@ def build_approval_app(controller, initial_view=None):
         def reload_view(selected_thread_id):
             return render(controller.reload(selected_thread_id))
 
+        def saved_task_detail_view(selected_thread_id):
+            return format_saved_task_detail(
+                selected_thread_id,
+                controller.list_tasks(),
+            )
+
+        def delete_saved_task_view(selected_thread_id, confirmed):
+            result = controller.delete_saved_task(selected_thread_id, confirmed)
+            tasks = controller.list_tasks()
+            if result.get("success", False):
+                feedback = (
+                    '<div class="saved-task-delete-success">任务记录已删除；'
+                    'Git 分支、提交、stash 和代码文件均未改动。</div>'
+                )
+            else:
+                feedback = (
+                    '<div class="saved-task-delete-error">'
+                    f'{escape(result.get("error", "删除失败"))}</div>'
+                )
+            return (
+                gr.update(choices=format_task_choices(tasks), value=None),
+                format_saved_task_detail(None, tasks),
+                False,
+                feedback,
+            )
+
+        def task_center_snapshot(search_text="", selected_status="all", selected_ids=None):
+            tasks = controller.list_tasks()
+            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
+            active_thread_id = (active or {}).get("thread_id", "")
+            prepared = prepare_task_center(
+                tasks,
+                active_thread_id=active_thread_id,
+                search=search_text,
+                status_filter=selected_status or "all",
+            )
+            counts = task_center_stats(tasks)
+            allowed_ids = {task["thread_id"] for task in prepared if not task.get("is_active")}
+            selected = [thread_id for thread_id in (selected_ids or []) if thread_id in allowed_ids]
+            return tasks, prepared, counts, selected
+
+        def task_center_page_view(prepared, page, selected):
+            page_items, current_page, total_pages = paginate_task_center(prepared, page)
+            return (
+                format_task_center_cards(page_items, selected),
+                current_page,
+                f"第 {current_page} / {total_pages} 页",
+                gr.update(interactive=current_page > 1),
+                gr.update(interactive=current_page < total_pages),
+            )
+
+        def show_workspace_view():
+            return (
+                gr.update(visible=True),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(variant="primary"),
+                gr.update(variant="secondary"),
+            )
+
+        def show_task_center_view(search_text, selected_status, selected_ids, page):
+            _, prepared, counts, selected = task_center_snapshot(
+                search_text, selected_status, selected_ids
+            )
+            cards, current_page, page_info, previous_state, next_state = task_center_page_view(
+                prepared, page, selected
+            )
+            return (
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                cards,
+                f"已选择 {len(selected)} 项",
+                gr.update(visible=bool(selected)),
+                selected,
+                gr.update(value=f"全部任务  {counts['all']}"),
+                gr.update(value=f"进行中  {counts['active']}"),
+                gr.update(value=f"需要处理  {counts['attention']}"),
+                gr.update(value=f"已完成  {counts['completed']}"),
+                gr.update(variant="secondary"),
+                gr.update(variant="primary"),
+                current_page,
+                page_info,
+                previous_state,
+                next_state,
+                task_loading_slot(),
+            )
+
+        task_center_outputs = [
+            workspace_grid,
+            task_center_view,
+            task_detail_drawer,
+            task_delete_confirm,
+            task_cards,
+            task_selection_summary,
+            task_selection_bar,
+            task_center_selected,
+            stats_all,
+            stats_active,
+            stats_attention,
+            stats_completed,
+            workspace_nav,
+            task_center_nav,
+            task_center_page,
+            task_page_info,
+            previous_task_page,
+            next_task_page,
+            task_center_loading_host,
+        ]
+
+        def filter_task_center(search_text, selected_status, selected_ids):
+            _, prepared, _, selected = task_center_snapshot(search_text, selected_status, selected_ids)
+            cards, current_page, page_info, previous_state, next_state = task_center_page_view(
+                prepared, 1, selected
+            )
+            return (
+                cards,
+                f"已选择 {len(selected)} 项",
+                gr.update(visible=bool(selected)),
+                selected,
+                current_page,
+                page_info,
+                previous_state,
+                next_state,
+                task_loading_slot(),
+            )
+
+        def choose_task_center_filter(group, search_text, selected_ids):
+            _, prepared, _, selected = task_center_snapshot(search_text, group, selected_ids)
+            cards, current_page, page_info, previous_state, next_state = task_center_page_view(
+                prepared, 1, selected
+            )
+            return (
+                group,
+                group,
+                cards,
+                f"已选择 {len(selected)} 项",
+                gr.update(visible=bool(selected)),
+                selected,
+                current_page,
+                page_info,
+                previous_state,
+                next_state,
+                task_loading_slot(),
+            )
+
+        def task_card_action(selected_ids, search_text, selected_status, page, evt: gr.EventData):
+            action = getattr(evt, "action", "detail")
+            selected_thread_id = getattr(evt, "thread_id", "")
+            tasks = controller.list_tasks()
+            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
+            active_thread_id = (active or {}).get("thread_id", "")
+            selected = list(selected_ids or [])
+            if action == "toggle" and selected_thread_id != active_thread_id:
+                if selected_thread_id in selected:
+                    selected.remove(selected_thread_id)
+                else:
+                    selected.append(selected_thread_id)
+                prepared = prepare_task_center(
+                    tasks,
+                    active_thread_id=active_thread_id,
+                    search=search_text,
+                    status_filter=selected_status or "all",
+                )
+                page_items, _, _ = paginate_task_center(prepared, page)
+                return (
+                    selected,
+                    format_task_center_cards(page_items, selected),
+                    "",
+                    gr.update(visible=False),
+                    f"已选择 {len(selected)} 项",
+                    gr.update(visible=bool(selected)),
+                )
+            return (
+                selected,
+                gr.skip(),
+                selected_thread_id,
+                gr.update(visible=True),
+                f"已选择 {len(selected)} 项",
+                gr.update(visible=bool(selected)),
+            )
+
+        def change_task_page(page, direction, search_text, selected_status, selected_ids):
+            _, prepared, _, selected = task_center_snapshot(
+                search_text, selected_status, selected_ids
+            )
+            return task_center_page_view(prepared, int(page or 1) + direction, selected)
+
+        def select_current_task_page(page, search_text, selected_status, selected_ids):
+            _, prepared, _, selected = task_center_snapshot(
+                search_text, selected_status, selected_ids
+            )
+            page_items, _, _ = paginate_task_center(prepared, page)
+            selected_set = set(selected)
+            selected_set.update(
+                task["thread_id"] for task in page_items if not task.get("is_active")
+            )
+            ordered_selected = [
+                task["thread_id"] for task in prepared if task["thread_id"] in selected_set
+            ]
+            return (
+                ordered_selected,
+                format_task_center_cards(page_items, ordered_selected),
+                f"已选择 {len(ordered_selected)} 项",
+                gr.update(visible=bool(ordered_selected)),
+            )
+
+        def show_task_detail(selected_thread_id):
+            tasks = controller.list_tasks()
+            selected = next(
+                (task for task in tasks if task.get("thread_id") == selected_thread_id),
+                {},
+            )
+            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
+            is_active = selected_thread_id == (active or {}).get("thread_id", "")
+            return (
+                format_task_center_detail(selected_thread_id, tasks),
+                gr.update(value=task_center_action_label(selected.get("status"))),
+                gr.update(visible=bool(selected_thread_id) and not is_active),
+                task_loading_slot(),
+            )
+
+        def clear_selection_view(search_text, selected_status, page):
+            _, prepared, _, _ = task_center_snapshot(search_text, selected_status, [])
+            page_items, _, _ = paginate_task_center(prepared, page)
+            return [], format_task_center_cards(page_items), "已选择 0 项", gr.update(visible=False)
+
+        def request_delete_view(selected_ids):
+            tasks = controller.list_tasks()
+            titles = [
+                task.get("query") or "未命名任务"
+                for task in tasks
+                if task.get("thread_id") in set(selected_ids or [])
+            ]
+            preview = "".join(f"<li>{escape(title)}</li>" for title in titles[:5])
+            return (
+                '<div class="task-delete-copy"><h2>删除任务记录</h2>'
+                f'<p>即将删除 {len(titles)} 条任务历史。</p><ul>{preview}</ul>'
+                '<p>Git 分支、commit、stash 和工程代码不会被修改。</p></div>',
+                gr.update(visible=bool(titles)),
+            )
+
+        def delete_batch_view(selected_ids, search_text, selected_status, page):
+            result = controller.delete_saved_tasks(selected_ids)
+            _, prepared, counts, _ = task_center_snapshot(search_text, selected_status, [])
+            cards, current_page, page_info, previous_state, next_state = task_center_page_view(
+                prepared, page, []
+            )
+            if result.get("success"):
+                feedback = '<div class="saved-task-delete-success">任务历史已删除，Git 与代码文件未改动。</div>'
+            else:
+                feedback = f'<div class="saved-task-delete-error">{escape(result.get("error", "删除失败"))}</div>'
+            return (
+                [],
+                cards,
+                "已选择 0 项",
+                gr.update(visible=False),
+                gr.update(visible=not result.get("success", False)),
+                feedback,
+                gr.update(value=f"全部任务  {counts['all']}"),
+                gr.update(value=f"进行中  {counts['active']}"),
+                gr.update(value=f"需要处理  {counts['attention']}"),
+                gr.update(value=f"已完成  {counts['completed']}"),
+                current_page,
+                page_info,
+                previous_state,
+                next_state,
+            )
+
+        def delete_detail_view(selected_thread_id, search_text, selected_status, page):
+            result = controller.delete_saved_tasks([selected_thread_id])
+            _, prepared, counts, _ = task_center_snapshot(search_text, selected_status, [])
+            cards, current_page, page_info, previous_state, next_state = task_center_page_view(
+                prepared, page, []
+            )
+            feedback = (
+                '<div class="saved-task-delete-success">任务历史已删除，Git 与代码文件未改动。</div>'
+                if result.get("success")
+                else f'<div class="saved-task-delete-error">{escape(result.get("error", "删除失败"))}</div>'
+            )
+            return (
+                "",
+                gr.update(visible=not result.get("success", False)),
+                cards,
+                feedback,
+                gr.update(value=f"全部任务  {counts['all']}"),
+                gr.update(value=f"进行中  {counts['active']}"),
+                gr.update(value=f"需要处理  {counts['attention']}"),
+                gr.update(value=f"已完成  {counts['completed']}"),
+                current_page,
+                page_info,
+                previous_state,
+                next_state,
+            )
+
+        def open_task_from_center(selected_thread_id):
+            return (
+                *render(controller.reload(selected_thread_id)),
+                gr.update(visible=True),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(variant="primary"),
+                gr.update(variant="secondary"),
+            )
+
+        def continue_active_view(current_thread_id):
+            for view in controller.continue_active_task_stream(current_thread_id):
+                yield render(view)
+
+        def abandon_active_view(current_thread_id):
+            return render(controller.abandon_active_task(current_thread_id))
+
+        def retry_failed_repair_view(current_thread_id):
+            for view in controller.retry_failed_repair_stream(current_thread_id):
+                yield render(view)
+
+        def retry_baseline_compile_view(current_thread_id):
+            for view in controller.retry_baseline_compile_stream(current_thread_id):
+                yield render(view)
+
+        def archive_dirty_view(current_thread_id):
+            return render(controller.archive_dirty(current_thread_id))
+
+        def retry_test_generation_view(current_thread_id):
+            for view in controller.retry_test_generation_stream(current_thread_id):
+                yield render(view)
+
         def accept_all_view(current_thread_id, bundle_id, approval_note):
-            return render(controller.accept_all(current_thread_id, bundle_id, approval_note))
+            for view in controller.accept_all_stream(
+                current_thread_id,
+                bundle_id,
+                approval_note,
+            ):
+                yield render(view)
 
         def reject_all_view(current_thread_id, bundle_id, approval_note):
             return render(controller.reject_all(current_thread_id, bundle_id, approval_note))
 
         def accept_selected_view(current_thread_id, bundle_id, patch_ids, approval_note):
-            return render(
-                controller.accept_selected(
+            for view in controller.accept_selected_stream(
                     current_thread_id,
                     bundle_id,
                     patch_ids,
                     approval_note,
-                )
-            )
+            ):
+                yield render(view)
 
         start_button.click(start_view, query, outputs)
         query.submit(start_view, query, outputs)
         reload_button.click(reload_view, recovery_task, outputs)
+        recovery_task.change(
+            saved_task_detail_view,
+            recovery_task,
+            saved_task_detail,
+        )
+        delete_saved_task.click(
+            delete_saved_task_view,
+            [recovery_task, delete_saved_task_confirm],
+            [
+                recovery_task,
+                saved_task_detail,
+                delete_saved_task_confirm,
+                saved_task_feedback,
+            ],
+        )
+        continue_active.click(continue_active_view, thread_id, outputs)
+        retry_failed_repair.click(retry_failed_repair_view, thread_id, outputs)
+        retry_baseline_compile.click(retry_baseline_compile_view, thread_id, outputs)
+        abandon_active.click(abandon_active_view, thread_id, outputs)
+        archive_dirty.click(archive_dirty_view, thread_id, outputs)
+        retry_test_generation.click(
+            retry_test_generation_view,
+            thread_id,
+            outputs,
+        )
         patch_picker.change(select_patch_diff, [patches_state, patch_picker], diff)
         selected_patches.change(
             lambda selected, patches: (
@@ -1812,5 +4299,26 @@ def build_approval_app(controller, initial_view=None):
             [thread_id, bundle_state, selected_patches, note],
             outputs,
         )
+
+        workspace_nav.click(show_workspace_view, outputs=[workspace_grid, task_center_view, task_detail_drawer, task_delete_confirm, workspace_nav, task_center_nav], js=SHOW_WORKSPACE_JS, show_progress="hidden")
+        task_center_nav.click(show_task_center_view, [task_search, task_status, task_center_selected, task_center_page], task_center_outputs, js=SHOW_TASK_CENTER_JS, show_progress="hidden")
+        open_task_center.click(show_task_center_view, [task_search, task_status, task_center_selected, task_center_page], task_center_outputs, js=SHOW_TASK_CENTER_JS, show_progress="hidden")
+        task_center_filter_outputs = [task_cards, task_selection_summary, task_selection_bar, task_center_selected, task_center_page, task_page_info, previous_task_page, next_task_page, task_center_loading_host]
+        task_search.input(filter_task_center, [task_search, task_status, task_center_selected], task_center_filter_outputs, show_progress="hidden")
+        task_status.change(filter_task_center, [task_search, task_status, task_center_selected], task_center_filter_outputs, js=TASK_CENTER_FILTER_LOADING_JS, show_progress="hidden")
+        task_refresh.click(filter_task_center, [task_search, task_status, task_center_selected], task_center_filter_outputs, js=TASK_CENTER_FILTER_LOADING_JS, show_progress="hidden")
+        for button, group in ((stats_all, "all"), (stats_active, "active"), (stats_attention, "attention"), (stats_completed, "completed")):
+            button.click(lambda search_text, selected_ids, group=group: choose_task_center_filter(group, search_text, selected_ids), [task_search, task_center_selected], [task_center_filter, task_status, *task_center_filter_outputs], show_progress="hidden")
+        task_cards.click(task_card_action, [task_center_selected, task_search, task_status, task_center_page], [task_center_selected, task_cards, task_center_detail_id, task_detail_drawer, task_selection_summary, task_selection_bar], show_progress="hidden").then(show_task_detail, task_center_detail_id, [task_detail, open_selected_task, delete_detail_task, task_detail_loading_host], show_progress="hidden")
+        select_task_page.click(select_current_task_page, [task_center_page, task_search, task_status, task_center_selected], [task_center_selected, task_cards, task_selection_summary, task_selection_bar], show_progress="hidden")
+        previous_task_page.click(lambda page, search, status_filter, selected: change_task_page(page, -1, search, status_filter, selected), [task_center_page, task_search, task_status, task_center_selected], [task_cards, task_center_page, task_page_info, previous_task_page, next_task_page], show_progress="hidden")
+        next_task_page.click(lambda page, search, status_filter, selected: change_task_page(page, 1, search, status_filter, selected), [task_center_page, task_search, task_status, task_center_selected], [task_cards, task_center_page, task_page_info, previous_task_page, next_task_page], show_progress="hidden")
+        close_task_detail.click(lambda: gr.update(visible=False), outputs=task_detail_drawer, js=CLOSE_TASK_DETAIL_JS, show_progress="hidden")
+        clear_task_selection.click(clear_selection_view, [task_search, task_status, task_center_page], [task_center_selected, task_cards, task_selection_summary, task_selection_bar], show_progress="hidden")
+        request_batch_delete.click(request_delete_view, task_center_selected, [delete_confirm_copy, task_delete_confirm])
+        cancel_batch_delete.click(lambda: gr.update(visible=False), outputs=task_delete_confirm)
+        confirm_batch_delete.click(delete_batch_view, [task_center_selected, task_search, task_status, task_center_page], [task_center_selected, task_cards, task_selection_summary, task_selection_bar, task_delete_confirm, task_delete_feedback, stats_all, stats_active, stats_attention, stats_completed, task_center_page, task_page_info, previous_task_page, next_task_page])
+        delete_detail_task.click(delete_detail_view, [task_center_detail_id, task_search, task_status, task_center_page], [task_center_detail_id, task_detail_drawer, task_cards, task_delete_feedback, stats_all, stats_active, stats_attention, stats_completed, task_center_page, task_page_info, previous_task_page, next_task_page])
+        open_selected_task.click(open_task_from_center, task_center_detail_id, [*outputs, workspace_grid, task_center_view, task_detail_drawer, workspace_nav, task_center_nav])
 
     return demo.queue(default_concurrency_limit=1)

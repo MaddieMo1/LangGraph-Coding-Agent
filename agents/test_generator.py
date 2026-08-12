@@ -7,6 +7,8 @@ from prompts.test_generator_prompt import get_test_generator_prompt
 class TestGeneratorAgent:
     """Plan Unity tests with an LLM and delegate all writes to a safe tool."""
 
+    MAX_PARSE_ATTEMPTS = 3
+
     def __init__(self, llm, test_generation_tool):
         self.llm = llm
         self.test_generation_tool = test_generation_tool
@@ -19,22 +21,55 @@ class TestGeneratorAgent:
             state.get("project_context", {}),
             state.get("dependency_graph", {}),
         )
-        response = self.llm.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
-        tests, parse_errors = self._parse_tests(content)
+        tests = []
+        parse_errors = []
+        attempts = 0
+        current_prompt = prompt
+        for attempts in range(1, self.MAX_PARSE_ATTEMPTS + 1):
+            response = self.llm.invoke(current_prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            tests, parse_errors = self._parse_tests(content)
+            if not parse_errors:
+                break
+            current_prompt = self._retry_prompt(prompt, parse_errors, attempts)
 
         if parse_errors:
-            tool_result = {"success": False, "files": [], "errors": parse_errors}
+            tool_result = {
+                "success": False,
+                "files": [],
+                "errors": parse_errors,
+                "error_code": "MODEL_OUTPUT_PARSE_ERROR",
+                "retryable": True,
+                "attempts": attempts,
+            }
         else:
             tool_result = self.test_generation_tool.apply(tests)
+            tool_result = {
+                **tool_result,
+                "error_code": (
+                    "" if tool_result.get("success", False) else "TEST_GENERATION_TOOL_ERROR"
+                ),
+                "retryable": False,
+                "attempts": attempts,
+            }
 
         return {
             "current_agent": "test_generator",
             "generated_tests": tests if tool_result["success"] else [],
             "test_generation_result": tool_result,
+            "retry_result": {"success": tool_result["success"], "status": "completed"},
             "agent_history": state.get("agent_history", [])
             + ["Test Generator完成" if tool_result["success"] else "Test Generator失败"],
         }
+
+    @staticmethod
+    def _retry_prompt(original_prompt, errors, attempt):
+        summary = "; ".join(str(error) for error in errors[:3])
+        return (
+            f"{original_prompt}\n\n"
+            f"The previous response could not be parsed (attempt {attempt}): {summary}. "
+            "Return one complete JSON object only. Do not use Markdown fences or commentary."
+        )
 
     @staticmethod
     def _parse_tests(content):

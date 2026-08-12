@@ -161,11 +161,37 @@ class ReviewerAgent:
                 for error in compiler_errors
             }
 
+            compiler_targets = {
+                id(error): self.resolve_compile_error_target(error, code)
+                for error in compiler_errors
+            }
+
 
             filtered_root_causes = []
 
 
             for root in root_causes:
+
+                matching_error = next(
+                    (
+                        error
+                        for error in compiler_errors
+                        if error.get("code", "") == root.get("error_code", "")
+                        and error.get("file", "").replace("\\", "/").split("/")[-1]
+                        in {
+                            root.get("source_file", "").replace("\\", "/").split("/")[-1],
+                            root.get("target_file", "").replace("\\", "/").split("/")[-1],
+                            root.get("fix_action", {}).get("target", "").replace("\\", "/").split("/")[-1],
+                        }
+                    ),
+                    None,
+                )
+
+                if matching_error is not None:
+                    target_file = compiler_targets[id(matching_error)]
+                    root["source_file"] = matching_error.get("file", "")
+                    root["target_file"] = target_file
+                    root.setdefault("fix_action", {})["target"] = target_file
 
                 root_files = [
                     root.get(
@@ -226,7 +252,7 @@ class ReviewerAgent:
 
                 for error in compiler_errors:
 
-                    file_name = error.get(
+                    source_file = error.get(
                         "file",
                         "unknown"
                     ).replace(
@@ -235,6 +261,8 @@ class ReviewerAgent:
                     ).split(
                         "/"
                     )[-1]
+
+                    file_name = compiler_targets[id(error)]
 
 
                     errors_by_file.setdefault(
@@ -264,7 +292,7 @@ class ReviewerAgent:
                             "id": index + 1,
                             "type": "compile_error",
                             "symbol": "",
-                            "source_file": file_name,
+                            "source_file": file_errors[0].get("file", source_file),
                             "target_file": file_name,
                             "affected_methods": [],
                             "error_code": file_errors[0].get(
@@ -485,6 +513,32 @@ class ReviewerAgent:
                 }
             )
         return review
+
+    @staticmethod
+    def resolve_compile_error_target(error, code):
+        """Map CS0122 call-site diagnostics to the file declaring the member."""
+        source_file = str(error.get("file", "unknown")).replace("\\", "/").split("/")[-1]
+        if error.get("code") != "CS0122":
+            return source_file
+
+        match = re.search(
+            r"'(?P<type>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.(?P<member>[A-Za-z_]\w*)\s*\(",
+            str(error.get("message", "")),
+        )
+        if not match:
+            return source_file
+
+        type_name = match.group("type").split(".")[-1]
+        member_name = match.group("member")
+        class_pattern = re.compile(rf"\bclass\s+{re.escape(type_name)}\b")
+        member_pattern = re.compile(rf"\b{re.escape(member_name)}\s*\(")
+        for item in code or []:
+            if not isinstance(item, dict):
+                continue
+            content = str(item.get("content", ""))
+            if class_pattern.search(content) and member_pattern.search(content):
+                return str(item.get("file", source_file)).replace("\\", "/").split("/")[-1]
+        return source_file
 
 
     def parse_review(self, content):

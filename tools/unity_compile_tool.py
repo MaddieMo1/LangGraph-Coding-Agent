@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import uuid
 
 
@@ -95,7 +96,7 @@ class UnityCompileTool:
         return None
 
 
-    def sync_scripts(self):
+    def sync_scripts(self, project_path=None):
         """
         同步生成代码到Unity测试工程
 
@@ -133,7 +134,7 @@ class UnityCompileTool:
 
 
         target_path = os.path.join(
-            self.project_path,
+            project_path or self.project_path,
             "Assets",
             "Generated"
         )
@@ -187,6 +188,16 @@ class UnityCompileTool:
             source_files
         )
 
+    def copy_project(self, sandbox_project):
+        os.makedirs(sandbox_project)
+        for folder in ("Assets", "Packages", "ProjectSettings"):
+            source = os.path.join(self.project_path, folder)
+            target = os.path.join(sandbox_project, folder)
+            if os.path.isdir(source):
+                shutil.copytree(source, target)
+            else:
+                os.makedirs(target)
+
     def compile(self):
         """
         执行Unity编译
@@ -202,59 +213,30 @@ class UnityCompileTool:
             return environment_error
 
 
+        sandbox_root = tempfile.mkdtemp(prefix="coding-agent-unity-compile-")
+        sandbox_project = os.path.join(sandbox_root, "Project")
+        result_data = None
+
         try:
+            self.copy_project(sandbox_project)
+            synced_files = self.sync_scripts(sandbox_project)
 
-            synced_files = self.sync_scripts()
-
-
-        except Exception as e:
-
-            return self.system_error(
-                str(e)
+            log_directory = os.path.join(sandbox_project, "Logs")
+            os.makedirs(log_directory, exist_ok=True)
+            log_path = os.path.join(
+                log_directory,
+                "coding-agent-compile-" + uuid.uuid4().hex + ".log"
             )
 
-
-        log_directory = os.path.join(
-            self.project_path,
-            "Logs"
-        )
-
-
-        os.makedirs(
-            log_directory,
-            exist_ok=True
-        )
-
-
-        log_path = os.path.join(
-            log_directory,
-            (
-                "coding-agent-compile-"
-                + uuid.uuid4().hex
-                + ".log"
-            )
-        )
-
-
-        if os.path.exists(
-            log_path
-        ):
-            os.remove(
+            command = [
+                self.unity_path,
+                "-batchmode",
+                "-quit",
+                "-projectPath",
+                sandbox_project,
+                "-logFile",
                 log_path
-            )
-
-
-        command = [
-            self.unity_path,
-            "-batchmode",
-            "-quit",
-            "-projectPath",
-            self.project_path,
-            "-logFile",
-            log_path
-        ]
-
-        try:
+            ]
 
             result = subprocess.run(
                 command,
@@ -287,30 +269,37 @@ class UnityCompileTool:
             )
 
             if result.returncode != 0 and not errors:
-
-                system_result = self.system_error(
-                    f"Unity进程异常退出，退出码:{result.returncode}"
-                )
+                if "No valid Unity Editor license found" in output:
+                    system_result = self.system_error(
+                        "Unity Editor 许可证不可用，请先在 Unity Hub 登录并激活许可证后重试"
+                    )
+                    system_result["errors"][0]["code"] = "UNITY_LICENSE_UNAVAILABLE"
+                else:
+                    system_result = self.system_error(
+                        f"Unity进程异常退出，退出码:{result.returncode}"
+                    )
 
                 system_result["synced_files"] = synced_files
                 system_result["raw"] = output
 
-                return system_result
-
-
-            return {
-                "success": len(errors) == 0,
-                "system_error": False,
-                "errors": errors,
-                "synced_files": synced_files,
-                "raw": output
-            }
+                result_data = system_result
+            else:
+                result_data = {
+                    "success": len(errors) == 0,
+                    "system_error": False,
+                    "errors": errors,
+                    "synced_files": synced_files,
+                    "raw": output
+                }
 
         except Exception as e:
+            result_data = self.system_error(str(e))
+        finally:
+            shutil.rmtree(sandbox_root, ignore_errors=True)
 
-            return self.system_error(
-                str(e)
-            )
+        result_data["sandbox_project"] = sandbox_project
+        result_data["sandbox_cleaned"] = not os.path.exists(sandbox_root)
+        return result_data
 
 
     def parse_errors(self, log):

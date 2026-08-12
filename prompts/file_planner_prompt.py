@@ -68,6 +68,8 @@ def get_file_planner_prompt(
 3. 不允许多个Manager管理同一模块
 4. UI层禁止定义核心数据结构
 5. 一个系统只能有一个核心入口
+6. 不得规划 Test.cs 或 Tests.cs 测试文件；测试由独立 Test Generator 生成
+7. 每个规划文件必须直接服务于用户需求；除非用户明确要求，不得规划无关现有系统的重构或补全
 
 
 输出严格JSON格式:

@@ -6,6 +6,26 @@ import os
 from tools.unity_compile_tool import UnityCompileTool
 
 
+def compile_generated_sources():
+    day06_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    compiler = UnityCompileTool(
+        unity_path=os.getenv(
+            "UNITY_EDITOR_PATH",
+            r"D:\Unity\Hub\Unity_Editor\2022.3.62f2c1\Editor\Unity.exe"
+        ),
+        project_path=os.getenv(
+            "UNITY_TEST_PROJECT_PATH",
+            r"D:\Unity\Unity_Project\CodingAgentTest"
+        ),
+        source_path=os.path.realpath(
+            os.path.abspath(
+                os.getenv("GENERATED_SOURCE_PATH", os.path.join(day06_path, "generated"))
+            )
+        ),
+    )
+    return compiler.compile()
+
+
 def unity_compile_agent(state):
     """
     Unity编译检查Agent
@@ -25,31 +45,7 @@ def unity_compile_agent(state):
 
     print("[Unity Compiler Agent]开始执行")
 
-    day06_path = os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(
-                __file__
-            )
-        )
-    )
-
-
-    compiler = UnityCompileTool(
-        unity_path=os.getenv(
-            "UNITY_EDITOR_PATH",
-            r"D:\Unity\Hub\Unity_Editor\2022.3.62f2c1\Editor\Unity.exe"
-        ),
-        project_path=os.getenv(
-            "UNITY_TEST_PROJECT_PATH",
-            r"D:\Unity\Unity_Project\CodingAgentTest"
-        ),
-        source_path=os.path.join(
-            day06_path,
-            "generated"
-        )
-    )
-
-    result = compiler.compile()
+    result = compile_generated_sources()
 
     # 保存当前编译结果
     state["compile_result"] = result

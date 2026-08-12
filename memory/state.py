@@ -86,8 +86,25 @@ class AgentState(TypedDict):
     approval_result: Dict[str, Any]
     approval_history: List[Dict[str, Any]]
     approval_status: str
+    approved_changes: List[Dict[str, str]]
     generated_tests: List[Dict[str, Any]]
     test_generation_result: Dict[str, Any]
+    retry_result: Dict[str, Any]
+    repair_retry_result: Dict[str, Any]
+
+    # =========================
+    # Git
+    # =========================
+
+    git_repository: str
+    git_branch: str
+    git_base_commit: str
+    git_status: str
+    git_result: Dict[str, Any]
+
+    baseline_compile_result: Dict[str, Any]
+    baseline_compile_status: str
+    baseline_retry_result: Dict[str, Any]
 
 
     # =========================

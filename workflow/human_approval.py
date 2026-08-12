@@ -107,11 +107,20 @@ class HumanApprovalNode:
             + [self._history_record(request, result, status)],
             "proposed_changes": [],
         }
+        if status in {
+            "approved",
+            "partially_approved",
+        }:
+            accepted_patches = self._accepted_patches(bundle_id)
+            accepted_files = {patch["file"] for patch in accepted_patches}
+            update["approved_changes"] = self._merge_approved_changes(
+                state.get("approved_changes", []),
+                accepted_patches,
+            )
         if request.get("source") == "coder" and status in {
             "approved",
             "partially_approved",
         }:
-            accepted_files = self._accepted_files(bundle_id)
             update["code"] = [
                 item
                 for item in state.get("code", [])
@@ -119,14 +128,32 @@ class HumanApprovalNode:
             ]
         return update
 
-    def _accepted_files(self, bundle_id):
+    def _accepted_patches(self, bundle_id):
         bundle = self.approval_tool.approval_store.get(bundle_id) or {}
         accepted_ids = set(bundle.get("decision", {}).get("accepted_patch_ids", []))
-        return {
-            patch["file"]
+        return [
+            {
+                "file": patch["file"],
+                "operation": patch["operation"],
+                "after_hash": patch["after_hash"],
+            }
             for patch in bundle.get("patches", [])
             if patch.get("patch_id") in accepted_ids
+        ]
+
+    @staticmethod
+    def _merge_approved_changes(existing, accepted):
+        by_file = {
+            item["file"]: {
+                "file": item["file"],
+                "operation": item["operation"],
+                "after_hash": item["after_hash"],
+            }
+            for item in existing
         }
+        for item in accepted:
+            by_file[item["file"]] = item
+        return [by_file[file_name] for file_name in sorted(by_file)]
 
     def _error_update(self, state, error_code, error):
         result = {

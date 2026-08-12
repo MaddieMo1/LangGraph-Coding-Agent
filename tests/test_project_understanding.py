@@ -82,12 +82,14 @@ class ProjectUnderstandingTest(unittest.TestCase):
 
         self.assertIn("ExistingInventory", prompt)
         self.assertIn("Game.Inventory", prompt)
+        self.assertIn("不得重构、重写或补全与本次需求无关", prompt)
 
     def test_file_planner_prompt_consumes_existing_types(self):
         prompt = get_file_planner_prompt("扩展背包", "architecture", self.context)
 
         self.assertIn("ExistingInventory", prompt)
         self.assertIn("Game.Inventory", prompt)
+        self.assertIn("不得规划无关现有系统", prompt)
 
 
 if __name__ == "__main__":
