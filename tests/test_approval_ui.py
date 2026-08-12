@@ -1081,7 +1081,9 @@ class ApprovalControllerTest(unittest.TestCase):
 
     def test_task_center_matches_workspace_width_and_aligns_filter_controls(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
-        filter_css = APPROVAL_CSS.split("#task-center-filters {", 1)[1].split("}", 1)[0]
+        filter_css = APPROVAL_CSS.split(
+            "#task-center-filters > .form {", 1
+        )[1].split("}", 1)[0]
 
         self.assertIn("width: 100% !important", task_center_css)
         self.assertIn("max-width: none !important", task_center_css)
@@ -1089,7 +1091,11 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("border-radius: 0 !important", task_center_css)
         self.assertIn("display: grid !important", filter_css)
         self.assertIn("grid-template-columns: minmax(0, 3fr)", filter_css)
-        self.assertIn("align-items: start !important", filter_css)
+        self.assertIn("align-items: end !important", filter_css)
+        self.assertIn("width: 100% !important", filter_css)
+        self.assertIn("max-width: none !important", filter_css)
+        self.assertIn("#task-center-refresh {\n    align-self: end !important", APPROVAL_CSS)
+        self.assertNotIn("margin-top: 27px", APPROVAL_CSS)
         self.assertIn("#task-center-search input", APPROVAL_CSS)
         self.assertIn("height: 44px !important", APPROVAL_CSS)
 

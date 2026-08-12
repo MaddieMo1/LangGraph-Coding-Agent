@@ -1256,11 +1256,17 @@ body {
 }
 #task-center-stats button:hover { border-color: var(--deck-cyan) !important; }
 
-#task-center-filters {
+#task-center-filters,
+#task-center-filters > .form {
     display: grid !important;
     grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr) minmax(180px, 1fr);
     gap: 12px;
-    align-items: start !important;
+    align-items: end !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
     background: #091320 !important;
 }
 #task-center-search,
@@ -1327,10 +1333,10 @@ button#task-center-refresh {
 }
 
 #task-center-refresh {
-    align-self: start !important;
-    margin-top: 27px !important;
+    align-self: end !important;
     min-height: 44px !important;
     height: 44px !important;
+    padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -1619,7 +1625,8 @@ button#task-center-refresh:hover {
 
 @media (max-width: 760px) {
     #task-center-view { padding: 20px 14px 80px !important; }
-    #task-center-filters { grid-template-columns: 1fr !important; }
+    #task-center-filters,
+    #task-center-filters > .form { grid-template-columns: 1fr !important; }
     .task-center-card { grid-template-columns: 38px minmax(0, 1fr); }
     .task-card-open { grid-column: 2; }
 }
