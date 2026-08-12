@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.8.0-success" alt="版本 v0.8.0">
+  <img src="https://img.shields.io/badge/Version-v0.9.0-success" alt="版本 v0.9.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -30,7 +30,20 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## ✨ Day11 已实现能力
+## ✨ Day12 已实现能力
+
+- 新增顶部“工作台 / 任务中心”双视图：任务中心提供四类状态统计、搜索与状态筛选、每页 10 条横向任务卡片、右侧详情抽屉以及非活动任务的多选和批量删除。
+- 任务中心保留顶部实时运行状态；切换视图不会清空尚未提交的任务输入。列表、筛选、刷新和详情请求使用局部骨架加载反馈，并统一采用深色控件、细边框与悬浮状态。
+
+- 工作流开始前检查生成代码 Git 仓库、提交身份、基线提交和干净状态，并创建 `agent/<id>` 本地任务分支。
+- 仅在 Code Checker、Unity Compiler、Unity Test 与 Reviewer 全部通过后进入 Git 提交节点。
+- Day11 批准结果会持久化文件路径、操作类型和目标哈希；提交前再次检查文件未发生漂移。
+- Git Tool 仅提供状态、Diff、分支、按路径暂存、本地提交，以及用户显式触发的失败现场 stash 归档；不接受任意命令，也不支持 push 或历史改写。
+- Neural Control Deck 展示任务分支、基准提交、最终 commit hash、提交信息和结构化 Git 错误。
+- Runtime 按当前 Git 分支识别唯一活动任务；刷新页面会自动恢复原任务，重复发起不会创建新的失败 thread。
+- 原任务提供“继续当前任务”和“主动放弃并归档”；放弃前校验分支、基准提交、批准文件集合与内容哈希，非所有者任务不能归档该工作区。
+- 恢复任务标签末尾显示检查点在 `Asia/Shanghai` 的更新时间（`YYYY-MM-DD HH:mm`）。
+- Repair 复审显示修复轮次、人工审批序号、失败门禁、错误代码、根因、相关文件和修复策略；Diff 只保留代码框内部滚动条。
 
 - Coder 与 Repair 只生成补丁提案，生产 C# 文件在人工审批前保持不变。
 - LangGraph 使用原生 `interrupt()` 暂停审批，并通过同一 thread ID 恢复工作流。
@@ -38,8 +51,10 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - 默认整批批准或拒绝；高级模式支持逐文件选择，批准子集仍原子应用。
 - 应用前校验路径、扩展名、源文件哈希和补丁内容；冲突时不写入。
 - SQLite 自动列出最近任务，可直接选择并恢复，无需手动记录 thread ID。
-- LangGraph 节点状态实时流式更新，任务执行期间可查看当前节点和历史进度。
-- Neural Control Deck 深色审批界面支持逐文件 Diff、文件选择、变更统计和固定审批操作栏。
+- LangGraph 节点状态在任务启动和审批恢复后都实时流式更新，可查看应用、静态检查、Unity 编译、测试、评审与 Git 进度。
+- Test Generator 的截断或非法 JSON 会在同一节点自动重试最多 2 次；仍失败时可从失败页沿用原 thread、已批准代码和任务分支执行“重试生成测试”，无需重新生成或审批生产代码。
+- Neural Control Deck 顶部标题随工作流状态变化；审批界面默认打开第一个文件，并在固定高度的可滚动 Diff 视口中审阅完整代码。
+- Code Checker 在启动 Unity 前检测同一命名空间的跨文件重复类型，并返回冲突类型与文件列表供 Repair 使用。
 - 页面使用浏览器原生滚动，并适配桌面、平板和移动端；粒子动效遵循 `prefers-reduced-motion`。
 
 - 工程化 Repair Tool：统一安全边界、结构化修改结果和多文件修复。
@@ -133,6 +148,38 @@ flowchart TD
 
 ## 📸 运行效果
 
+### 🧭 Day12 工作台
+
+<p align="center">
+  <img src="./docs/design-references/day12-workbench.png" alt="Day12 工作台与安全任务入口" width="900" />
+</p>
+
+工作台保留四阶段执行导航、实时任务状态和安全任务入口；切换到任务中心再返回时，尚未提交的任务输入仍会保留。
+
+### 🔍 人工审批与可滚动 Diff
+
+<p align="center">
+  <img src="./docs/design-references/day12-approval-diff.png" alt="Day12 人工审批与可滚动 Diff" width="900" />
+</p>
+
+审批阶段默认展示第一个变更文件，完整代码位于固定高度的可滚动 Diff 视口；支持整批批准、仅批准所选文件和拒绝本次提案。
+
+### 🗃️ 独立任务中心
+
+<p align="center">
+  <img src="./docs/design-references/day12-task-center.png" alt="Day12 独立任务中心" width="900" />
+</p>
+
+任务中心集中展示状态统计、搜索、筛选、分页任务卡和详情入口。活动任务固定置顶并受安全锁保护，非活动任务支持本页全选与批量删除。
+
+### ✅ 验证完成与本地 Git 提交
+
+<p align="center">
+  <img src="./docs/design-references/day12-task-complete.png" alt="Day12 验证完成与本地 Git 提交" width="900" />
+</p>
+
+只有静态检查、Unity 编译、EditMode 测试和 Reviewer 全部通过，工作流才会在本地任务分支创建提交并显示 commit、分支和基准提交信息。
+
 ### 🧠 Day11 Neural Control Deck
 
 <p align="center">
@@ -213,9 +260,18 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 
 UNITY_EDITOR_PATH=D:\Unity\Hub\Unity_Editor\2022.3.62f2c1\Editor\Unity.exe
 UNITY_TEST_PROJECT_PATH=D:\Unity\Unity_Project\CodingAgentTest
+GENERATED_SOURCE_PATH=D:\path\to\generated-code-repository
+GENERATED_TEST_SOURCE_PATH=D:\path\to\runtime-state\generated-tests
+WORKFLOW_CHECKPOINT_PATH=D:\path\to\runtime-state\workflow.sqlite
 ```
 
 Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSettings/` 目录。生成脚本只会同步到测试工程的 `Assets/Generated`。
+
+`GENERATED_SOURCE_PATH` 必须指向独立 Git 仓库根目录。首次运行前应执行 `git init -b main`、配置 `user.name`/`user.email`，并创建至少一个基线提交；任务开始时工作区必须干净。验证失败留下已批准文件时，`DIRTY_BASELINE` 页面会列出相关文件，并可由用户显式执行“归档失败现场并清理工作区”；系统使用包含未跟踪文件的 Git stash 保存现场，复核工作区干净后才允许新任务。Day12 不会自动 push 或创建 PR。
+
+测试生成阶段的模型 JSON 解析错误属于可恢复失败：系统先自动重试，重试耗尽后保留 SQLite 检查点、批准证据和任务分支。手动恢复前会重新验证当前分支、基准提交、脏文件集合和批准内容哈希；检测到任何漂移都会拒绝继续。
+
+`GENERATED_TEST_SOURCE_PATH` 和 `WORKFLOW_CHECKPOINT_PATH` 可选，用于将生成测试与 SQLite 检查点隔离到指定运行目录；未配置时继续使用项目内默认路径。`PROJECT_CONTEXT_PATH`、`DEPENDENCY_GRAPH_PATH`、`PATCH_HISTORY_PATH`、`APPROVAL_HISTORY_PATH` 和 `LONG_TERM_MEMORY_PATH` 也支持相同的可选隔离方式。
 
 ## ▶️ 运行
 
@@ -310,6 +366,14 @@ python main.py
 - 文件选中、禁用、加载和审批状态的完整深色主题；
 - 浏览器原生页面滚动与固定审批操作栏；
 - 桌面、平板、移动端响应式布局与减少动态效果支持。
+
+### ✅ v0.9.0 — 已完成（Day12）
+
+- 生成代码仓库的干净基线检查与本地任务分支；
+- Git 状态、Diff、按批准路径暂存和中文 Conventional Commit；
+- 批准文件哈希复核与未批准文件隔离；
+- 全验证门禁后的本地提交和持久化 Git 结果；
+- 不包含 push、PR、reset、merge、rebase 或历史改写；stash 仅用于用户显式触发、可恢复的失败现场归档。
 
 ### 🔭 后续计划
 

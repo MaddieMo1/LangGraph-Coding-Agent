@@ -13,12 +13,13 @@ from agents.coordinator import CoordinatorAgent
 from agents.architecture import ArchitectureAgent
 from agents.architecture_validator import ArchitectureValidator
 from agents.file_planner import FilePlannerAgent
+from agents.git import GitAgent
 from agents.coder import CoderAgent
 from agents.test_generator import TestGeneratorAgent
 from agents.code_checker import CodeCheckerAgent
 from agents.reviewer import ReviewerAgent
 from agents.repair import RepairAgent
-from agents.unity_compiler import unity_compile_agent
+from agents.unity_compiler import compile_generated_sources, unity_compile_agent
 from agents.unity_test import unity_test_agent
 from workflow.router import router
 from workflow.review_router import review_router
@@ -36,6 +37,7 @@ from tools.change_proposal_tool import ChangeProposalTool
 from tools.diff_tool import DiffTool
 from tools.dependency_graph import DependencyGraphBuilder
 from tools.file_manager import FileManager
+from tools.git_tool import GitTool
 from tools.project_scanner import UnityProjectScanner
 from tools.repair_tool import RepairTool
 from tools.test_generation_tool import TestGenerationTool
@@ -88,7 +90,10 @@ class AgentWorkflow:
         self.test_generator = TestGeneratorAgent(
             self.llm,
             TestGenerationTool(
-                os.path.join(day06_path, "generated_tests")
+                os.getenv(
+                    "GENERATED_TEST_SOURCE_PATH",
+                    os.path.join(day06_path, "generated_tests"),
+                )
             )
         )
 
@@ -110,25 +115,31 @@ class AgentWorkflow:
         self.project_understanding = ProjectUnderstandingNode(
             UnityProjectScanner(unity_project_path),
             ProjectContextStore(
-                os.path.join(
-                    day06_path,
-                    "memory",
-                    "project_context.json"
+                os.getenv(
+                    "PROJECT_CONTEXT_PATH",
+                    os.path.join(day06_path, "memory", "project_context.json"),
                 )
             ),
             DependencyGraphBuilder(),
             DependencyGraphStore(
-                os.path.join(
-                    day06_path,
-                    "memory",
-                    "dependency_graph.json"
+                os.getenv(
+                    "DEPENDENCY_GRAPH_PATH",
+                    os.path.join(day06_path, "memory", "dependency_graph.json"),
                 )
             ),
         )
 
-        generated_path = os.path.join(
-            day06_path,
-            "generated"
+        generated_path = os.path.realpath(
+            os.path.abspath(
+                os.getenv(
+                    "GENERATED_SOURCE_PATH",
+                    os.path.join(day06_path, "generated")
+                )
+            )
+        )
+
+        self.git_agent = GitAgent(
+            GitTool(generated_path)
         )
 
         self.diff_tool = DiffTool(
@@ -137,10 +148,9 @@ class AgentWorkflow:
         )
 
         self.patch_history = PatchHistory(
-            os.path.join(
-                day06_path,
-                "memory",
-                "patch_history.json"
+            os.getenv(
+                "PATCH_HISTORY_PATH",
+                os.path.join(day06_path, "memory", "patch_history.json"),
             ),
             self.diff_tool
         )
@@ -207,6 +217,37 @@ class AgentWorkflow:
 
         return self.coordinator.run(
             state
+        )
+
+
+    def git_prepare_node(self, state):
+        return self.git_agent.prepare(state)
+
+
+    def git_commit_node(self, state):
+        return self.git_agent.commit(state)
+
+
+    def git_prepare_router(self, state):
+        return "baseline_compiler" if state.get("git_status") == "prepared" else "finish_task"
+
+
+    def baseline_compiler_node(self, state):
+        result = compile_generated_sources()
+        return {
+            "baseline_compile_result": result,
+            "baseline_compile_status": "passed" if result.get("success") else "failed",
+            "current_agent": "baseline_compiler",
+            "agent_history": state.get("agent_history", [])
+            + ["Baseline Compiler完成"],
+        }
+
+
+    def baseline_compiler_router(self, state):
+        return (
+            "coordinator"
+            if state.get("baseline_compile_result", {}).get("success", False)
+            else "finish_task"
         )
 
 
@@ -435,6 +476,16 @@ class AgentWorkflow:
     def build_graph(self):
 
         self.workflow.add_node(
+            "git_prepare",
+            self.git_prepare_node
+        )
+
+        self.workflow.add_node(
+            "baseline_compiler",
+            self.baseline_compiler_node
+        )
+
+        self.workflow.add_node(
             "coordinator",
             self.coordinator_node
         )
@@ -514,9 +565,34 @@ class AgentWorkflow:
             self.unity_test_node
         )
 
+        self.workflow.add_node(
+            "git_commit",
+            self.git_commit_node
+        )
+
 
         self.workflow.set_entry_point(
-            "coordinator"
+            "git_prepare"
+        )
+
+
+        # Git preparation
+        self.workflow.add_conditional_edges(
+            "git_prepare",
+            self.git_prepare_router,
+            {
+                "baseline_compiler":"baseline_compiler",
+                "finish_task":"finish_task"
+            }
+        )
+
+        self.workflow.add_conditional_edges(
+            "baseline_compiler",
+            self.baseline_compiler_router,
+            {
+                "coordinator":"coordinator",
+                "finish_task":"finish_task"
+            }
         )
 
 
@@ -658,6 +734,7 @@ class AgentWorkflow:
                 "reviewer":"reviewer",
                 "repair":"repair",
                 "architecture":"architecture",
+                "git_commit":"git_commit",
                 "finish_task":"finish_task"
             }
         )
@@ -673,6 +750,12 @@ class AgentWorkflow:
         self.workflow.add_edge(
             "finish_task",
             END
+        )
+
+
+        self.workflow.add_edge(
+            "git_commit",
+            "finish_task"
         )
 
 

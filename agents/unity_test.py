@@ -17,8 +17,14 @@ def unity_test_agent(state):
             "UNITY_TEST_PROJECT_PATH",
             r"D:\Unity\Unity_Project\CodingAgentTest",
         ),
-        production_source_path=os.path.join(day06_path, "generated"),
-        test_source_path=os.path.join(day06_path, "generated_tests"),
+        production_source_path=os.getenv(
+            "GENERATED_SOURCE_PATH",
+            os.path.join(day06_path, "generated"),
+        ),
+        test_source_path=os.getenv(
+            "GENERATED_TEST_SOURCE_PATH",
+            os.path.join(day06_path, "generated_tests"),
+        ),
     )
     result = tool.run()
     history = state.get("test_history", [])

@@ -3,6 +3,8 @@
 # 代码检查Agent
 # =========================
 
+import os
+
 from tools.code_check_tool import CodeCheckTool
 from tools.file_manager import FileManager
 
@@ -26,6 +28,12 @@ class CodeCheckerAgent:
 
         self.tool = CodeCheckTool()
         self.file_manager = FileManager()
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.generated_path = os.path.realpath(
+            os.path.abspath(
+                os.getenv("GENERATED_SOURCE_PATH", os.path.join(project_root, "generated"))
+            )
+        )
 
 
     def run(self,state):
@@ -44,11 +52,19 @@ class CodeCheckerAgent:
 
 
         result = self.tool.check_project(
-            "generated"
+            self.generated_path
         )
 
-
-        code = self.file_manager.read_generated_files()
+        code = [
+            {
+                "file": file_name,
+                "content": self.file_manager.read_file(
+                    os.path.join(self.generated_path, file_name)
+                ),
+            }
+            for file_name in sorted(os.listdir(self.generated_path))
+            if file_name.endswith(".cs")
+        ]
 
 
         if result.get(

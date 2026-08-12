@@ -81,6 +81,17 @@ class HumanApprovalNodeTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.generated_root, "A.cs")))
         self.assertEqual([], result["proposed_changes"])
         self.assertEqual(1, len(result["approval_history"]))
+        patch = state["approval_request"]["patches"][0]
+        self.assertEqual(
+            [
+                {
+                    "file": "A.cs",
+                    "operation": "create",
+                    "after_hash": patch["after_hash"],
+                }
+            ],
+            result["approved_changes"],
+        )
 
     def test_approval_node_rejects_without_writing(self):
         state = self.pending_state(source="repair")
@@ -137,6 +148,33 @@ class HumanApprovalNodeTest(unittest.TestCase):
 
         self.assertEqual("partially_approved", result["approval_status"])
         self.assertEqual(["A.cs"], [item["file"] for item in result["code"]])
+        self.assertEqual(["A.cs"], [item["file"] for item in result["approved_changes"]])
+
+    def test_later_approval_replaces_evidence_for_the_same_file(self):
+        first_state = self.pending_state()
+        first_node = HumanApprovalNode(
+            self.approval_tool,
+            interrupt_fn=lambda payload: {
+                "bundle_id": payload["bundle_id"],
+                "action": "approve",
+                "mode": "batch",
+            },
+        )
+        first_result = first_node.run(first_state)
+        second_base = {
+            **first_state,
+            **first_result,
+            "proposal_source": "repair",
+            "proposed_changes": [{"file": "A.cs", "content": "class A { int X; }\n"}],
+        }
+        second_state = {**second_base, **self.proposal_node.run(second_base)}
+        second_result = first_node.run(second_state)
+
+        self.assertEqual(1, len(second_result["approved_changes"]))
+        self.assertEqual(
+            second_state["approval_request"]["patches"][0]["after_hash"],
+            second_result["approved_changes"][0]["after_hash"],
+        )
 
 
 if __name__ == "__main__":

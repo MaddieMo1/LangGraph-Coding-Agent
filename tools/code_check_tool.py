@@ -66,6 +66,13 @@ class CodeCheckTool:
                 result
             )
 
+        errors.extend(
+            self.check_duplicate_types(
+                project_path,
+                files
+            )
+        )
+
 
         return {
 
@@ -117,6 +124,93 @@ class CodeCheckTool:
                     )
 
         return files
+
+
+    def check_duplicate_types(self, project_path, files):
+        """Detect non-partial namespace-level types declared in multiple files."""
+
+        declarations = {}
+        for file_path in files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as source:
+                    content = source.read()
+            except (OSError, UnicodeError):
+                continue
+
+            for declaration in self._namespace_level_types(content):
+                full_name = declaration["full_name"]
+                declarations.setdefault(full_name, []).append(
+                    {
+                        "file": os.path.relpath(file_path, project_path).replace("\\", "/"),
+                        "partial": declaration["partial"],
+                    }
+                )
+
+        errors = []
+        for full_name, entries in sorted(declarations.items()):
+            files_with_type = sorted({entry["file"] for entry in entries})
+            if len(files_with_type) < 2 or all(entry["partial"] for entry in entries):
+                continue
+            errors.append(
+                {
+                    "file": files_with_type[0],
+                    "error": "DUPLICATE_TYPE",
+                    "message": (
+                        f"类型 {full_name} 在多个文件中重复声明: "
+                        + ", ".join(files_with_type)
+                    ),
+                    "type": full_name,
+                    "files": files_with_type,
+                }
+            )
+        return errors
+
+
+    @staticmethod
+    def _namespace_level_types(content):
+        code = re.sub(r"/\*.*?\*/", "", content, flags=re.S)
+        code = re.sub(r"//[^\n]*", "", code)
+        code = re.sub(r'@?"(?:""|\\.|[^"\\])*"', '""', code)
+        token_pattern = re.compile(
+            r"\bnamespace\s+(?P<namespace>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*(?P<namespace_end>[;{])"
+            r"|\b(?P<partial>partial\s+)?(?P<kind>class|interface|struct|enum|record)\s+"
+            r"(?P<type>[A-Za-z_]\w*)"
+            r"|(?P<brace>[{}])"
+        )
+        depth = 0
+        namespace = ""
+        namespace_depth = 0
+        namespace_is_block = False
+        declarations = []
+
+        for token in token_pattern.finditer(code):
+            if token.group("namespace"):
+                namespace = token.group("namespace")
+                namespace_is_block = token.group("namespace_end") == "{"
+                if namespace_is_block:
+                    depth += 1
+                namespace_depth = depth
+                continue
+            if token.group("type"):
+                if depth == namespace_depth:
+                    name = token.group("type")
+                    declarations.append(
+                        {
+                            "full_name": f"{namespace}.{name}" if namespace else name,
+                            "partial": bool(token.group("partial")),
+                        }
+                    )
+                continue
+            if token.group("brace") == "{":
+                depth += 1
+            elif token.group("brace") == "}":
+                depth = max(0, depth - 1)
+                if namespace_is_block and depth < namespace_depth:
+                    namespace = ""
+                    namespace_depth = depth
+                    namespace_is_block = False
+
+        return declarations
 
 
 
