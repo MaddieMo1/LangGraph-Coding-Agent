@@ -1059,16 +1059,13 @@ class ApprovalControllerTest(unittest.TestCase):
     def test_task_center_removes_outer_and_status_control_borders(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
         status_wrap_css = APPROVAL_CSS.split("#task-center-status .wrap {", 1)[1].split("}", 1)[0]
-        status_control_css = APPROVAL_CSS.split(
-            '#task-center-status [role="combobox"],\n#task-center-status input {', 1
-        )[1].split("}", 1)[0]
 
         self.assertIn("border: none !important", task_center_css)
         self.assertIn("outline: none !important", task_center_css)
         self.assertIn("border: 0 !important", status_wrap_css)
         self.assertIn("background: transparent !important", status_wrap_css)
-        self.assertIn("border: 1px solid var(--deck-line) !important", status_control_css)
-        self.assertIn("box-shadow: none !important", status_control_css)
+        self.assertIn("border: 1px solid var(--deck-line) !important", APPROVAL_CSS)
+        self.assertIn("box-shadow: none !important", APPROVAL_CSS)
 
     def test_task_center_status_and_refresh_use_consistent_dark_controls(self):
         self.assertIn("button#task-center-refresh", APPROVAL_CSS)
@@ -1094,19 +1091,23 @@ class ApprovalControllerTest(unittest.TestCase):
 
     def test_task_center_matches_workspace_width_and_aligns_filter_controls(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view,", 1)[1].split("}", 1)[0]
-        filter_css = APPROVAL_CSS.split(
-            "#task-center-filters > .form {", 1
-        )[1].split("}", 1)[0]
+        filter_css = APPROVAL_CSS.split("#task-center-filters {", 1)[1].split("}", 1)[0]
 
         self.assertIn("width: 100% !important", task_center_css)
         self.assertIn("max-width: none !important", task_center_css)
         self.assertIn("margin: 0 !important", task_center_css)
         self.assertIn("border-radius: 0 !important", task_center_css)
         self.assertIn("display: grid !important", filter_css)
-        self.assertIn("grid-template-columns: minmax(0, 8fr)", filter_css)
+        self.assertIn(
+            "grid-template-columns: minmax(0, 5fr) minmax(220px, 3fr) minmax(180px, 2fr)",
+            filter_css,
+        )
+        self.assertIn("column-gap: 24px", filter_css)
         self.assertIn("align-items: end !important", filter_css)
         self.assertIn("width: 100% !important", filter_css)
         self.assertIn("max-width: none !important", filter_css)
+        self.assertIn("padding: 0 12px 0 0 !important", filter_css)
+        self.assertIn("#task-center-filters > .form {\n    display: contents !important;", APPROVAL_CSS)
         self.assertIn("#task-center-refresh {\n    display: flex !important;\n    align-self: end !important", APPROVAL_CSS)
         self.assertNotIn("margin-top: 27px", APPROVAL_CSS)
         self.assertIn("#task-center-search input", APPROVAL_CSS)

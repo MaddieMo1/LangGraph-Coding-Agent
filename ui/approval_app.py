@@ -1256,18 +1256,23 @@ body {
 }
 #task-center-stats button:hover { border-color: var(--deck-cyan) !important; }
 
-#task-center-filters,
-#task-center-filters > .form {
+#task-center-filters {
     display: grid !important;
-    grid-template-columns: minmax(0, 8fr) minmax(220px, 1fr) minmax(180px, 1fr);
-    gap: 12px;
+    grid-template-columns: minmax(0, 5fr) minmax(220px, 3fr) minmax(180px, 2fr);
+    column-gap: 24px;
+    row-gap: 12px;
     align-items: end !important;
     width: 100% !important;
+    box-sizing: border-box !important;
     max-width: none !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 0 12px 0 0 !important;
     border: 0 !important;
     background: #091320 !important;
+}
+
+#task-center-filters > .form {
+    display: contents !important;
 }
 #task-center-search,
 #task-center-status,
@@ -1300,6 +1305,26 @@ body {
     background: transparent !important;
     box-shadow: none !important;
     overflow: visible !important;
+}
+
+#task-center-status,
+#task-center-status > label,
+#task-center-status .wrap,
+#task-center-status .wrap-inner,
+#task-center-status .secondary-wrap,
+#task-center-status [role="combobox"],
+#task-center-status input {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+}
+
+#task-center-status > label,
+#task-center-status .wrap,
+#task-center-status .wrap-inner,
+#task-center-status .secondary-wrap {
+    display: flex !important;
+    flex: 1 1 auto !important;
 }
 
 #task-center-search input,
@@ -1339,7 +1364,10 @@ button#task-center-refresh {
 #task-center-refresh {
     display: flex !important;
     align-self: end !important;
+    justify-self: stretch !important;
     align-items: stretch !important;
+    transform: translateY(-9px);
+    max-width: none !important;
     padding: 0 !important;
     border: 0 !important;
     background: transparent !important;
@@ -1350,6 +1378,8 @@ button#task-center-refresh {
 button#task-center-refresh {
     display: flex !important;
     flex: 1 1 auto !important;
+    width: 100% !important;
+    max-width: none !important;
     align-items: center !important;
     justify-content: center !important;
     text-align: center !important;

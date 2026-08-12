@@ -95,3 +95,5 @@
 - Diff and command audit: passed; deletion uses only parameterized SQLite statements inside one transaction.
 - Live service: `127.0.0.1:7861` returned the new navigation, task center, cards, selection bar, detail drawer, confirmation panel, and 35 event dependencies in Gradio `/config`.
 - Browser automation limitation: the Codex in-app browser host still fails during bootstrap with its known `process` property collision, so final visual clicking remains a manual browser check. No user task was deleted during verification.
+- Final layout polish: the search, status filter, and refresh action share one non-wrapping grid row; the status control fills its column, the refresh label is centered, and the filter row right edge aligns with the task cards. README now includes clean screenshots for the workbench, approval Diff, task center, and completed Git result.
+- Release verification: 259 full-suite tests and 30 focused Git/Day12 tests passed; Python compilation, `git diff --check`, the Day12 no-LLM notebook, and the Git command-surface audit also passed.

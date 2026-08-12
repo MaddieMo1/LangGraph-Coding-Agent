@@ -148,6 +148,38 @@ flowchart TD
 
 ## 📸 运行效果
 
+### 🧭 Day12 工作台
+
+<p align="center">
+  <img src="./docs/design-references/day12-workbench.png" alt="Day12 工作台与安全任务入口" width="900" />
+</p>
+
+工作台保留四阶段执行导航、实时任务状态和安全任务入口；切换到任务中心再返回时，尚未提交的任务输入仍会保留。
+
+### 🔍 人工审批与可滚动 Diff
+
+<p align="center">
+  <img src="./docs/design-references/day12-approval-diff.png" alt="Day12 人工审批与可滚动 Diff" width="900" />
+</p>
+
+审批阶段默认展示第一个变更文件，完整代码位于固定高度的可滚动 Diff 视口；支持整批批准、仅批准所选文件和拒绝本次提案。
+
+### 🗃️ 独立任务中心
+
+<p align="center">
+  <img src="./docs/design-references/day12-task-center.png" alt="Day12 独立任务中心" width="900" />
+</p>
+
+任务中心集中展示状态统计、搜索、筛选、分页任务卡和详情入口。活动任务固定置顶并受安全锁保护，非活动任务支持本页全选与批量删除。
+
+### ✅ 验证完成与本地 Git 提交
+
+<p align="center">
+  <img src="./docs/design-references/day12-task-complete.png" alt="Day12 验证完成与本地 Git 提交" width="900" />
+</p>
+
+只有静态检查、Unity 编译、EditMode 测试和 Reviewer 全部通过，工作流才会在本地任务分支创建提交并显示 commit、分支和基准提交信息。
+
 ### 🧠 Day11 Neural Control Deck
 
 <p align="center">
