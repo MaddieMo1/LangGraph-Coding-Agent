@@ -1194,9 +1194,13 @@ body {
 
 #task-center-view,
 #task-center-view.gr-group {
+    width: 100% !important;
+    max-width: none !important;
     min-height: calc(100vh - 88px);
+    margin: 0 !important;
     padding: 34px 42px 120px !important;
     border: none !important;
+    border-radius: 0 !important;
     outline: none !important;
     box-shadow: none !important;
     color: var(--deck-text);
@@ -1252,14 +1256,41 @@ body {
 }
 #task-center-stats button:hover { border-color: var(--deck-cyan) !important; }
 
-#task-center-filters { gap: 12px; align-items: end; background: #091320 !important; }
+#task-center-filters {
+    display: grid !important;
+    grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr) minmax(180px, 1fr);
+    gap: 12px;
+    align-items: end !important;
+    background: #091320 !important;
+}
 #task-center-search,
 #task-center-status,
 #task-center-refresh,
 #task-center-search .form,
 #task-center-status .form { background: #091320 !important; }
+#task-center-search,
+#task-center-status,
+#task-center-refresh {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+}
+#task-center-search .form,
+#task-center-status .form {
+    min-height: 44px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
 #task-center-filters input,
 #task-center-filters .wrap { background: #081321 !important; }
+
+#task-center-search input,
+#task-center-refresh button,
+button#task-center-refresh {
+    min-height: 44px !important;
+    height: 44px !important;
+}
 
 #task-center-status .wrap,
 #task-center-status [role="combobox"],
@@ -1275,6 +1306,7 @@ body {
 #task-center-status [role="combobox"],
 #task-center-status input {
     min-height: 44px !important;
+    height: 44px !important;
     padding: 0 14px !important;
     line-height: 42px !important;
 }
@@ -1568,6 +1600,7 @@ button#task-center-refresh:hover {
 
 @media (max-width: 760px) {
     #task-center-view { padding: 20px 14px 80px !important; }
+    #task-center-filters { grid-template-columns: 1fr !important; }
     .task-center-card { grid-template-columns: 38px minmax(0, 1fr); }
     .task-card-open { grid-column: 2; }
 }
