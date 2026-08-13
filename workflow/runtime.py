@@ -538,6 +538,8 @@ class WorkflowRuntime:
                     "git_commit_hash": values.get("git_commit_hash", ""),
                     "git_commit_message": values.get("git_commit_message", ""),
                     "approved_file_count": len(values.get("approved_changes", []) or []),
+                    "model_route": dict(values.get("model_route", {}) or {}),
+                    "model_usage": dict(values.get("model_usage", {}) or {}),
                 }
             )
             if len(threads) >= limit:

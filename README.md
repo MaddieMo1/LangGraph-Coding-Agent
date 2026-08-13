@@ -70,6 +70,14 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - 只有通过后续编译或测试验证的 Repair 才会成为可复用方案；系统与环境错误不会污染缺陷记忆。
 - Reviewer 与 Repair 会优先参考同错误码的历史成功方案，但当前 Compiler、NUnit 和 Root Cause 证据始终优先。
 
+## ✅ Day13：Multi-Model Router
+
+- Architecture、File Planner、Coder、Test Generator、Reviewer 和 Repair 不再共享单一模型，按角色与确定性复杂度规则选择模型。
+- 快速档使用 `deepseek-v4-flash`；复杂架构、长上下文规划、代码生成、独立 Review 和 Repair 使用各自的专业模型。
+- 主模型发生可恢复错误时最多切换一次其他 Provider；输出格式错误先由当前模型纠正一次，再触发回退。
+- Provider、模型、复杂度、选择原因、调用次数、耗时和可用 token usage 会持久化，UI 只读展示，不提供逐任务手动选模。
+- 不增加 Agent，不改变人工审批、Unity 验证或本地 Git 安全边界。
+
 ### Day06-4 编译修复闭环
 
 - 在独立测试工程中执行真实 Unity BatchMode 编译。
@@ -374,6 +382,14 @@ python main.py
 - 批准文件哈希复核与未批准文件隔离；
 - 全验证门禁后的本地提交和持久化 Git 结果；
 - 不包含 push、PR、reset、merge、rebase 或历史改写；stash 仅用于用户显式触发、可恢复的失败现场归档。
+
+### ✅ v0.10.0 — 已完成（Day13）
+
+- 按角色和确定性复杂度路由 DeepSeek、Kimi、Qwen 与 GLM；
+- 输出格式纠正、受限重试和最多一次跨 Provider 回退；
+- 路由、调用次数、耗时和 token usage 持久化与只读展示；
+- 保持现有 Agent 数量、人工审批、Unity 门禁和 Git 权限不变。
+- 四家 Provider 最小真实调用通过；真实 Unity 2022.3 全链路完成生成、审批、编译、7/7 EditMode 测试、Reviewer 100 分和路径受限的本地 Git 提交。
 
 ### 🔭 后续计划
 

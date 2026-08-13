@@ -164,6 +164,32 @@ class Day09WorkflowTest(unittest.TestCase):
         )
         self.assertIn("InventoryTests.Add", prompt)
 
+    def test_successful_review_ignores_findings_outside_approved_files(self):
+        review = {
+            "score": 70,
+            "pass": False,
+            "root_causes": [
+                {
+                    "source_file": "InventoryManager.cs",
+                    "target_file": "InventoryController.cs",
+                    "fix_action": {"target": "InventoryController.cs"},
+                }
+            ],
+            "remaining_issues": [{"file": "InventoryManager.cs"}],
+        }
+
+        result = ReviewerAgent.limit_successful_review_to_approved_files(
+            review,
+            {"ScoreValue.cs"},
+            {"success": True},
+            {"success": True},
+        )
+
+        self.assertTrue(result["pass"])
+        self.assertEqual(100, result["score"])
+        self.assertEqual([], result["root_causes"])
+        self.assertEqual([], result["remaining_issues"])
+
 
 if __name__ == "__main__":
     unittest.main()

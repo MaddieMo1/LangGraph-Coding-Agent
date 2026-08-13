@@ -5,6 +5,7 @@ import json
 import re
 
 from prompts.reviewer_prompt import get_reviewer_prompt
+from llm.invocation import invoke_model, model_state_update
 
 
 class ReviewerAgent:
@@ -50,6 +51,19 @@ class ReviewerAgent:
             []
         )
 
+        approved_files = {
+            str(item.get("file", "")).replace("\\", "/").split("/")[-1]
+            for item in state.get("approved_changes", [])
+            if isinstance(item, dict) and item.get("file")
+        }
+        review_code = [
+            item
+            for item in code
+            if not approved_files
+            or str(item.get("file", "")).replace("\\", "/").split("/")[-1]
+            in approved_files
+        ]
+
         code_check_result = state.get(
             "code_check_result",
             {}
@@ -67,7 +81,7 @@ class ReviewerAgent:
 
 
         prompt = get_reviewer_prompt(
-            code,
+            review_code,
             code_check_result,
             compile_result,
             state.get(
@@ -83,19 +97,13 @@ class ReviewerAgent:
         )
 
 
-        result = self.llm.invoke(
-            prompt
+        invocation = invoke_model(
+            self.llm,
+            prompt,
+            state,
+            self._valid_review_json,
         )
-
-
-        content = (
-            result.content
-            if hasattr(
-                result,
-                "content"
-            )
-            else str(result)
-        )
+        content = invocation.content
 
 
         print("[Reviewer Raw Output]")
@@ -392,6 +400,14 @@ class ReviewerAgent:
             test_result
         )
 
+        review = self.limit_successful_review_to_approved_files(
+            review,
+            approved_files,
+            compile_result,
+            test_result,
+        )
+        root_causes = review.get("root_causes", [])
+
 
         invalid_review = any(
             issue.get(
@@ -469,8 +485,19 @@ class ReviewerAgent:
             +
             [
                 "Reviewer Agent完成"
-            ]
+            ],
+            **model_state_update(state, [invocation.record])
         }
+
+
+    @staticmethod
+    def _valid_review_json(content):
+        try:
+            match = re.search(r"\{.*\}", content, re.S)
+            data = json.loads(match.group()) if match else None
+            return isinstance(data, dict), "review JSON object required"
+        except (json.JSONDecodeError, AttributeError):
+            return False, "review JSON object required"
 
 
     def validate_test_result(self, review, test_result):
@@ -512,6 +539,44 @@ class ReviewerAgent:
                     "severity": "high",
                 }
             )
+        return review
+
+    @staticmethod
+    def limit_successful_review_to_approved_files(
+        review, approved_files, compile_result, test_result
+    ):
+        """Exclude pre-existing project findings after task validation succeeds."""
+        if (
+            not approved_files
+            or not compile_result.get("success", False)
+            or not test_result.get("success", False)
+        ):
+            return review
+
+        def basename(value):
+            return str(value or "").replace("\\", "/").split("/")[-1]
+
+        roots = [
+            root
+            for root in review.get("root_causes", [])
+            if approved_files.intersection(
+                {
+                    basename(root.get("source_file")),
+                    basename(root.get("target_file")),
+                    basename((root.get("fix_action") or {}).get("target")),
+                }
+            )
+        ]
+        issues = [
+            issue
+            for issue in review.get("remaining_issues", [])
+            if basename(issue.get("file")) in approved_files
+        ]
+        review["root_causes"] = roots
+        review["remaining_issues"] = issues
+        if not roots and not issues:
+            review["score"] = 100
+            review["pass"] = True
         return review
 
     @staticmethod

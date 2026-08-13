@@ -164,6 +164,12 @@ class AgentState(TypedDict):
     # Token统计
     tokens: int
 
+    # Day13 Multi-Model Router
+    model_route: Dict[str, Any]
+    model_routing_history: List[Dict[str, Any]]
+    model_usage: Dict[str, Dict[str, Any]]
+    model_error: Dict[str, Any]
+
 
     # =========================
     # Repair

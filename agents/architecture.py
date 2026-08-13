@@ -3,6 +3,7 @@
 # 架构设计Agent
 # =========================
 from prompts.architecture_prompt import get_architecture_prompt
+from llm.invocation import invoke_model, model_state_update
 
 
 class ArchitectureAgent:
@@ -48,14 +49,14 @@ class ArchitectureAgent:
             state.get("dependency_graph", {})
         )
 
-        result = self.llm.invoke(
-            prompt
-        )
+        invocation = invoke_model(self.llm, prompt, state)
+        result = invocation.content
 
         return {
             "current_agent": "architecture",
             "architecture": result,
             "agent_history": state["agent_history"] + [
                 "Architecture Agent完成"
-            ]
+            ],
+            **model_state_update(state, [invocation.record])
         }

@@ -20,6 +20,10 @@ def review_router(state):
         下一阶段节点名称
     """
 
+    if state.get("model_error"):
+        print("[Review Router]模型路由失败，安全结束任务")
+        return "finish_task"
+
     review = state.get(
         "review",
         {}

@@ -2,6 +2,7 @@
 # Repair Agent
 # =========================
 from prompts.repair_prompt import repair_prompt
+from llm.invocation import invoke_model, model_state_update
 
 
 class RepairAgent:
@@ -107,6 +108,7 @@ class RepairAgent:
         )
 
 
+        self._routing_state = state
         result = self.route_fix(
             root_causes,
             issues,
@@ -155,6 +157,12 @@ class RepairAgent:
             "status": repair_status,
             "actions": actions
         }
+        model_records = [
+            action.get("model_record")
+            for action in actions
+            if action.get("model_record")
+        ]
+        self._routing_state = None
 
 
         return {
@@ -185,7 +193,9 @@ class RepairAgent:
             "repair",
 
             "current_agent":
-            "repair"
+            "repair",
+
+            **model_state_update(state, model_records)
         }
 
 
@@ -331,19 +341,16 @@ class RepairAgent:
         )
 
 
-        result = self.llm.invoke(
-            prompt
+        invocation = invoke_model(
+            self.llm,
+            prompt,
+            getattr(self, "_routing_state", None) or {},
+            lambda content: (
+                self.repair_tool.apply_llm_result(content, target_file).get("success", False),
+                "repair code response required",
+            ),
         )
-
-
-        content = (
-            result.content
-            if hasattr(
-                result,
-                "content"
-            )
-            else str(result)
-        )
+        content = invocation.content
 
 
         tool_result = self.repair_tool.apply_llm_result(
@@ -356,6 +363,7 @@ class RepairAgent:
             **tool_result,
             "root": root,
             "roots": roots,
+            "model_record": invocation.record,
         }
 
 

@@ -2,6 +2,7 @@ import json
 import re
 
 from prompts.test_generator_prompt import get_test_generator_prompt
+from llm.invocation import invoke_model, model_state_update
 
 
 class TestGeneratorAgent:
@@ -25,11 +26,24 @@ class TestGeneratorAgent:
         parse_errors = []
         attempts = 0
         current_prompt = prompt
+        model_records = []
         for attempts in range(1, self.MAX_PARSE_ATTEMPTS + 1):
-            response = self.llm.invoke(current_prompt)
-            content = response.content if hasattr(response, "content") else str(response)
+            invocation = invoke_model(
+                self.llm,
+                current_prompt,
+                state,
+                lambda content: (
+                    not self._parse_tests(content)[1],
+                    "; ".join(self._parse_tests(content)[1]),
+                ),
+            )
+            content = invocation.content
+            if invocation.record:
+                model_records.append(invocation.record)
             tests, parse_errors = self._parse_tests(content)
             if not parse_errors:
+                break
+            if invocation.record:
                 break
             current_prompt = self._retry_prompt(prompt, parse_errors, attempts)
 
@@ -60,6 +74,7 @@ class TestGeneratorAgent:
             "retry_result": {"success": tool_result["success"], "status": "completed"},
             "agent_history": state.get("agent_history", [])
             + ["Test Generator完成" if tool_result["success"] else "Test Generator失败"],
+            **model_state_update(state, model_records),
         }
 
     @staticmethod

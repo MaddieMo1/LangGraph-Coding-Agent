@@ -26,7 +26,9 @@ from workflow.review_router import review_router
 from workflow.task import finish_task
 from workflow.project_understanding import ProjectUnderstandingNode
 
-from llm.deepseek import DeepSeekLLM
+from llm.invocation import RoleModel
+from llm.model_router import ModelRouteError, ModelRouter
+from llm.provider import build_default_providers
 from memory.approval import ApprovalStore
 from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
@@ -57,26 +59,26 @@ class AgentWorkflow:
 
     def __init__(self):
 
-        self.llm = DeepSeekLLM()
+        self.model_router = ModelRouter(build_default_providers())
 
         self.coordinator = CoordinatorAgent()
 
         self.architecture = ArchitectureAgent(
-            self.llm
+            RoleModel(self.model_router, "architecture")
         )
 
         self.architecture_validator = ArchitectureValidator(
-            self.llm
+            None
         )
 
         self.file_planner = FilePlannerAgent(
-            self.llm
+            RoleModel(self.model_router, "file_planner")
         )
 
         self.code_checker = CodeCheckerAgent()
 
         self.reviewer = ReviewerAgent(
-            self.llm
+            RoleModel(self.model_router, "reviewer")
         )
 
         self.file_manager = FileManager()
@@ -88,7 +90,7 @@ class AgentWorkflow:
         )
 
         self.test_generator = TestGeneratorAgent(
-            self.llm,
+            RoleModel(self.model_router, "test_generator"),
             TestGenerationTool(
                 os.getenv(
                     "GENERATED_TEST_SOURCE_PATH",
@@ -184,7 +186,7 @@ class AgentWorkflow:
         )
 
         self.coder = CoderAgent(
-            self.llm,
+            RoleModel(self.model_router, "coder"),
             generated_path
         )
 
@@ -196,7 +198,7 @@ class AgentWorkflow:
         )
 
         self.repair = RepairAgent(
-            self.llm,
+            RoleModel(self.model_router, "repair"),
             self.repair_tool
         )
 
@@ -256,9 +258,30 @@ class AgentWorkflow:
         Architecture Agent节点
         """
 
-        return self.architecture.run(
-            state
-        )
+        return self._run_model_node(self.architecture.run, state)
+
+
+    @staticmethod
+    def _run_model_node(run, state):
+        try:
+            return run(state)
+        except ModelRouteError as error:
+            return {
+                "current_agent": "finish_task",
+                "model_error": dict(error.result),
+                "model_route": dict(error.result),
+                "model_routing_history": (
+                    list(state.get("model_routing_history", []) or [])
+                    + [dict(error.result)]
+                )[-100:],
+                "agent_history": list(state.get("agent_history", []) or [])
+                + ["模型路由失败，任务安全结束"],
+            }
+
+
+    @staticmethod
+    def model_node_router(state, success_node):
+        return "finish_task" if state.get("model_error") else success_node
 
 
     def project_understanding_node(self,state):
@@ -313,9 +336,7 @@ class AgentWorkflow:
         文件规划节点
         """
 
-        return self.file_planner.run(
-            state
-        )
+        return self._run_model_node(self.file_planner.run, state)
 
 
     def coder_node(self,state):
@@ -323,9 +344,7 @@ class AgentWorkflow:
         代码生成节点
         """
 
-        return self.coder.run(
-            state
-        )
+        return self._run_model_node(self.coder.run, state)
 
 
     def code_checker_node(self,state):
@@ -339,7 +358,7 @@ class AgentWorkflow:
 
 
     def test_generator_node(self,state):
-        return self.test_generator.run(state)
+        return self._run_model_node(self.test_generator.run, state)
 
 
     def test_generator_router(self,state):
@@ -353,9 +372,7 @@ class AgentWorkflow:
         代码审核节点
         """
 
-        return self.reviewer.run(
-            state
-        )
+        return self._run_model_node(self.reviewer.run, state)
 
 
     def repair_node(self,state):
@@ -363,9 +380,7 @@ class AgentWorkflow:
         修复节点
         """
 
-        return self.repair.run(
-            state
-        )
+        return self._run_model_node(self.repair.run, state)
 
 
     def change_proposal_node(self,state):
@@ -625,9 +640,13 @@ class AgentWorkflow:
 
 
         # Architecture
-        self.workflow.add_edge(
+        self.workflow.add_conditional_edges(
             "architecture",
-            "architecture_validator"
+            lambda state: self.model_node_router(state, "architecture_validator"),
+            {
+                "architecture_validator":"architecture_validator",
+                "finish_task":"finish_task"
+            }
         )
 
 
@@ -645,7 +664,7 @@ class AgentWorkflow:
         # File Planner
         self.workflow.add_conditional_edges(
             "file_planner",
-            router,
+            lambda state: "finish_task" if state.get("model_error") else router(state),
             {
                 "file_planner":"file_planner",
                 "coder":"coder",
@@ -655,9 +674,13 @@ class AgentWorkflow:
 
 
         # Coder
-        self.workflow.add_edge(
+        self.workflow.add_conditional_edges(
             "coder",
-            "change_proposal"
+            lambda state: self.model_node_router(state, "change_proposal"),
+            {
+                "change_proposal":"change_proposal",
+                "finish_task":"finish_task"
+            }
         )
 
 
@@ -741,9 +764,13 @@ class AgentWorkflow:
 
 
         # Repair
-        self.workflow.add_edge(
+        self.workflow.add_conditional_edges(
             "repair",
-            "change_proposal"
+            lambda state: self.model_node_router(state, "change_proposal"),
+            {
+                "change_proposal":"change_proposal",
+                "finish_task":"finish_task"
+            }
         )
 
 

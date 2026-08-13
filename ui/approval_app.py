@@ -2296,7 +2296,7 @@ def format_repair_context(context):
         f"<li>{escape(item)}</li>" for item in context.get("strategies", [])
     ) or "<li>修复策略未记录</li>"
     return (
-        '<div class="repair-review-card">'
+        '<div class="repair-review-card" style="margin:-12px;padding:12px;width:calc(100% + 24px);color:#dce8f7;background:#0b1626 !important;background-color:#0b1626 !important;">'
         '<div class="inspector-title">本轮 Repair 原因</div>'
         '<div class="repair-review-meta">'
         f'<span>Repair 第 {repair_round} 轮</span>'
@@ -2597,6 +2597,14 @@ def format_task_center_detail(thread_id, tasks):
     title = " ".join((selected.get("query") or "未命名任务").split())
     status = STATUS_LABELS.get(selected.get("status"), selected.get("status") or "已保存")
     error = " ".join((selected.get("error") or "暂无错误记录").split())
+    model_route = selected.get("model_route", {}) or {}
+    model_usage = selected.get("model_usage", {}) or {}
+    total_requests = sum(int(item.get("requests", 0) or 0) for item in model_usage.values())
+    total_latency = sum(int(item.get("latency_ms", 0) or 0) for item in model_usage.values())
+    model_name = "—"
+    if model_route.get("provider") or model_route.get("model"):
+        model_name = f'{model_route.get("provider", "—")} / {model_route.get("model", "—")}'
+    fallback_label = "已回退" if model_route.get("fallback_used") else "未回退"
     return (
         '<div class="task-drawer-content">'
         f'<div class="task-drawer-status">{escape(status)}</div>'
@@ -2611,6 +2619,10 @@ def format_task_center_detail(thread_id, tasks):
         f'<dt>任务分支</dt><dd class="is-code">{escape(selected.get("git_branch") or "—")}</dd>'
         f'<dt>基础提交</dt><dd class="is-code">{escape(selected.get("git_base_commit") or "—")}</dd>'
         f'<dt>最终提交</dt><dd class="is-code">{escape(selected.get("git_commit_hash") or "—")}</dd>'
+        f'<dt>最近模型</dt><dd class="is-code">{escape(model_name)}</dd>'
+        f'<dt>模型复杂度</dt><dd>{escape(model_route.get("complexity") or "—")}</dd>'
+        f'<dt>模型回退</dt><dd>{fallback_label}</dd>'
+        f'<dt>模型调用</dt><dd>{total_requests} 次 · {total_latency} ms</dd>'
         f'<dt>任务 ID</dt><dd class="is-code">{escape(thread_id or "—")}</dd>'
         '</dl></div>'
     )
@@ -3308,6 +3320,8 @@ class ApprovalController:
             "query": result.get("query", ""),
             "current_agent": result.get("current_agent", ""),
             "agent_history": result.get("agent_history", []),
+            "model_route": dict(result.get("model_route", {}) or {}),
+            "model_usage": dict(result.get("model_usage", {}) or {}),
             "git_status": git_status,
             "git_branch": result.get("git_branch", git_result.get("branch", "")),
             "git_base_commit": result.get(

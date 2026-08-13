@@ -4,6 +4,7 @@
 # =========================
 
 from llm.deepseek import DeepSeekLLM
+from llm.invocation import invoke_model, model_state_update
 
 from prompts.coder_prompt import coder_prompt
 
@@ -65,13 +66,15 @@ class CoderAgent:
         generated_files = []
 
         tool_records = []
+        model_records = []
 
 
         for file_info in files:
 
             result = self.generate_file(
                 state["query"],
-                file_info
+                file_info,
+                state,
             )
 
 
@@ -83,6 +86,8 @@ class CoderAgent:
             tool_records.append(
                 result["tool"]
             )
+            if result.get("model_record"):
+                model_records.append(result["model_record"])
 
 
         return {
@@ -118,13 +123,14 @@ class CoderAgent:
             +
             [
                 "Coder Agent多文件生成完成"
-            ]
+            ],
+            **model_state_update(state, model_records)
 
         }
 
 
 
-    def generate_file(self,requirement,file_info):
+    def generate_file(self,requirement,file_info,state=None):
         """
         根据文件规划生成单个文件
 
@@ -175,9 +181,13 @@ class CoderAgent:
         )
 
 
-        code = self.llm.invoke(
-            prompt
+        invocation = invoke_model(
+            self.llm,
+            prompt,
+            state or {},
+            lambda content: (bool(extract_code(content).strip()), "non-empty C# code required"),
         )
+        code = invocation.content
 
 
         code = extract_code(
@@ -212,6 +222,8 @@ class CoderAgent:
 
                 "status":
                 "pending"
-            }
+            },
+
+            "model_record": invocation.record
 
         }

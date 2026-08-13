@@ -966,6 +966,37 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("进入审批", task_center_action_label("pending"))
         self.assertEqual("查看结果", task_center_action_label("completed"))
 
+    def test_task_detail_shows_read_only_model_route_summary(self):
+        tasks = [{
+            "thread_id": "model-task",
+            "query": "生成单文件组件",
+            "status": "completed",
+            "model_route": {
+                "provider": "deepseek",
+                "model": "deepseek-v4-flash",
+                "complexity": "simple",
+                "fallback_used": True,
+                "attempts": 3,
+                "latency_ms": 1234,
+            },
+            "model_usage": {
+                "deepseek/deepseek-v4-flash": {
+                    "requests": 3,
+                    "input_tokens": 10,
+                    "output_tokens": 20,
+                    "latency_ms": 1234,
+                }
+            },
+        }]
+
+        detail = format_task_center_detail("model-task", tasks)
+
+        self.assertIn("deepseek / deepseek-v4-flash", detail)
+        self.assertIn("simple", detail)
+        self.assertIn("已回退", detail)
+        self.assertIn("3 次", detail)
+        self.assertNotIn("API Key", detail)
+
     def test_controller_batch_delete_delegates_all_selected_threads(self):
         result = self.controller.delete_saved_tasks(["thread-1", "thread-2"])
 
@@ -1219,6 +1250,26 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn('#repair-context-info .prose > div', APPROVAL_CSS)
         self.assertIn('#repair-context-info .repair-review-card', APPROVAL_CSS)
         self.assertIn('--block-background-fill: transparent', APPROVAL_CSS)
+        self.assertIn('background:#0b1626 !important', format_repair_context({
+            "visible": True,
+            "round": 1,
+            "approval_sequence": 2,
+            "failed_gates": [],
+            "error_codes": [],
+            "reasons": [],
+            "files": [],
+            "strategies": [],
+        }))
+        self.assertIn('margin:-12px;padding:12px;width:calc(100% + 24px)', format_repair_context({
+            "visible": True,
+            "round": 1,
+            "approval_sequence": 2,
+            "failed_gates": [],
+            "error_codes": [],
+            "reasons": [],
+            "files": [],
+            "strategies": [],
+        }))
 
     def test_repair_context_disables_gradio_default_prose_surface(self):
         pending_view = self.controller.reload("thread-1")

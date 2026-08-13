@@ -7,6 +7,7 @@ import re
 
 from prompts.file_planner_prompt import get_file_planner_prompt
 from utils.file_roles import is_test_file_name
+from llm.invocation import invoke_model, model_state_update
 
 
 class FilePlannerAgent:
@@ -197,9 +198,13 @@ class FilePlannerAgent:
             state.get("dependency_graph", {})
         )
         
-        response = self.llm.invoke(
-            prompt
+        invocation = invoke_model(
+            self.llm,
+            prompt,
+            state,
+            lambda content: (bool(self.parse_files(content)), "files JSON required"),
         )
+        response = invocation.content
 
 
         if hasattr(
@@ -225,6 +230,10 @@ class FilePlannerAgent:
         files = self.parse_files(
             response
         )
+        files = self.enforce_explicit_file_scope(
+            state.get("query", ""),
+            files,
+        )
 
 
         print(
@@ -242,5 +251,25 @@ class FilePlannerAgent:
             +
             [
                 "File Planner Agent完成"
-            ]
+            ],
+            **model_state_update(state, [invocation.record])
         }
+
+    @staticmethod
+    def enforce_explicit_file_scope(query, files):
+        """Honor an explicit one-file boundary without guessing extra files."""
+        normalized_query = str(query or "")
+        single_file_words = ("单文件", "一个文件", "这一个", "仅生成", "只生成", "只规划")
+        if not any(word in normalized_query for word in single_file_words):
+            return files
+        requested = re.findall(r"(?<![\w.])([A-Za-z_][A-Za-z0-9_]*\.cs)\b", normalized_query)
+        requested = list(dict.fromkeys(requested))
+        if len(requested) != 1:
+            return files
+        target = requested[0].lower()
+        return [
+            file_info
+            for file_info in files
+            if isinstance(file_info, dict)
+            and str(file_info.get("name", "")).lower() == target
+        ]
