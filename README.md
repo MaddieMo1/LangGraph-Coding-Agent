@@ -5,14 +5,14 @@
 </p>
 
 <p align="center">
-  <b>基于 LangGraph、LangChain、DeepSeek 与 Unity Compiler 构建的多智能体编程工作流。</b>
+  <b>基于 LangGraph、LangChain、确定性多模型路由与 Unity Compiler 构建的多智能体编程工作流。</b>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
-  <img src="https://img.shields.io/badge/DeepSeek-LLM-purple" alt="DeepSeek">
-  <img src="https://img.shields.io/badge/Version-v0.9.0-success" alt="版本 v0.9.0">
+  <img src="https://img.shields.io/badge/Providers-DeepSeek%20%7C%20Kimi%20%7C%20Qwen%20%7C%20GLM-purple" alt="DeepSeek、Kimi、Qwen 与 GLM">
+  <img src="https://img.shields.io/badge/Version-v0.11.0-success" alt="版本 v0.11.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -78,11 +78,13 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Provider、模型、复杂度、选择原因、调用次数、耗时和可用 token usage 会持久化，UI 只读展示，不提供逐任务手动选模。
 - 不增加 Agent，不改变人工审批、Unity 验证或本地 Git 安全边界。
 
-## 🧪 Day14：Agent Evaluation（离线基准已实现）
+## ✅ Day14：Agent Evaluation
 
 - 固定离线基准覆盖首次成功、修复成功、修复耗尽、模型失败和 Unity 环境阻塞，每个案例包含三次确定性运行记录。
 - 报告编译成功率、修复成功率、端到端成功率、Token 消耗、循环次数、功能稳定性、路由漂移与失败分类，不生成掩盖质量门失败的综合分数。
-- 真实 Provider + Unity 验收记录与离线分数严格分离；零修复场景已通过，Repair 场景的现有真实运行在 3 轮后失败，Day14 完整验收仍需一条 Repair 后成功的链路。
+- 固定 fixture 的端到端成功率为 2/4、编译成功率为 2/3、Repair 成功率为 1/2、功能稳定性为 5/5；这些分母由基准契约定义，不代表线上流量统计。
+- 真实 Provider + Unity 验收记录与离线分数严格分离；零修复链路和 Repair 1 轮后成功链路均通过全部质量门并创建本地提交。
+- Repair 真实链路最终通过 Code Checker、Unity 编译、14/14 EditMode 测试和 Reviewer 100 分，提交为 `84108ed28b432acaff42d3c94e30629fd257bd5f`。
 - 运行 `python -m evaluation.runner` 可生成 `evaluation/results/day14_evaluation.json` 和仓库根目录的 `evaluation_report.md`。
 - `day14/Day14.ipynb` 可在无 LLM、无 Unity、无网络环境下复现核心指标和报告确定性。
 
@@ -164,37 +166,45 @@ flowchart TD
 
 ## 📸 运行效果
 
-### 🧭 Day12 工作台
+### 🧭 工作台与安全任务入口
 
 <p align="center">
-  <img src="./docs/design-references/day12-workbench.png" alt="Day12 工作台与安全任务入口" width="900" />
+  <img src="./docs/design-references/day14-workbench.png" alt="Day14 工作台与安全任务入口" width="900" />
 </p>
 
 工作台保留四阶段执行导航、实时任务状态和安全任务入口；切换到任务中心再返回时，尚未提交的任务输入仍会保留。
 
-### 🔍 人工审批与可滚动 Diff
+### 🔍 首次审批与 Repair 复审
 
 <p align="center">
-  <img src="./docs/design-references/day12-approval-diff.png" alt="Day12 人工审批与可滚动 Diff" width="900" />
+  <img src="./docs/design-references/day14-approval.png" alt="Day14 首次人工审批与可滚动 Diff" width="900" />
 </p>
 
-审批阶段默认展示第一个变更文件，完整代码位于固定高度的可滚动 Diff 视口；支持整批批准、仅批准所选文件和拒绝本次提案。
+审批阶段默认展示第一个变更文件，完整代码位于固定高度的可滚动 Diff 视口；支持整批批准、仅批准所选文件和拒绝本次提案。Repair 复审会额外展示触发门禁、错误代码、根因、涉及文件和修复策略。
+
+<p align="center">
+  <img src="./docs/design-references/day14-repair-approval.png" alt="Day14 Repair 二次人工审批与修复原因" width="900" />
+</p>
 
 ### 🗃️ 独立任务中心
 
 <p align="center">
-  <img src="./docs/design-references/day12-task-center.png" alt="Day12 独立任务中心" width="900" />
+  <img src="./docs/design-references/day14-task-center.png" alt="Day14 独立任务中心" width="900" />
 </p>
 
 任务中心集中展示状态统计、搜索、筛选、分页任务卡和详情入口。活动任务固定置顶并受安全锁保护，非活动任务支持本页全选与批量删除。
 
-### ✅ 验证完成与本地 Git 提交
-
 <p align="center">
-  <img src="./docs/design-references/day12-task-complete.png" alt="Day12 验证完成与本地 Git 提交" width="900" />
+  <img src="./docs/design-references/day14-task-detail.png" alt="Day14 任务详情与真实验收证据" width="900" />
 </p>
 
-只有静态检查、Unity 编译、EditMode 测试和 Reviewer 全部通过，工作流才会在本地任务分支创建提交并显示 commit、分支和基准提交信息。
+### ✅ 全质量门通过与本地 Git 提交
+
+<p align="center">
+  <img src="./docs/design-references/day14-complete.png" alt="Day14 全质量门通过与本地 Git 提交" width="900" />
+</p>
+
+只有静态检查、Unity 编译、EditMode 测试和 Reviewer 全部通过，工作流才会在本地任务分支创建提交并显示 commit、分支和基准提交信息；界面同时显示开始时间与执行耗时。
 
 ### 🧠 Day11 Neural Control Deck
 
@@ -398,6 +408,14 @@ python main.py
 - 路由、调用次数、耗时和 token usage 持久化与只读展示；
 - 保持现有 Agent 数量、人工审批、Unity 门禁和 Git 权限不变。
 - 四家 Provider 最小真实调用通过；真实 Unity 2022.3 全链路完成生成、审批、编译、7/7 EditMode 测试、Reviewer 100 分和路径受限的本地 Git 提交。
+
+### ✅ v0.11.0 — 已完成（Day14）
+
+- 固定、可复现且只读的离线 Agent 基准；
+- 端到端、编译、Repair、Token、循环、稳定性、路由漂移与失败分类指标；
+- 确定性 JSON/Markdown 报告与 no-LLM Notebook；
+- 离线分数与真实 Provider + Unity 验收证据严格分离；
+- 零修复与 Repair 1 轮后成功两条真实链路均通过全部质量门并创建本地提交。
 
 ### 🔭 后续计划
 

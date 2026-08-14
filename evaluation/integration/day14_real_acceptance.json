@@ -18,15 +18,15 @@
     {
       "acceptance_id": "day14-real-repair",
       "scenario": "repair_success",
-      "status": "failed",
-      "gates": [true, false, true, false],
-      "repair_count": 3,
-      "provider": "deepseek",
-      "model": "deepseek-v4-pro",
-      "input_tokens": 2031668,
-      "output_tokens": 104908,
-      "commit": null,
-      "blocker_code": "REPAIR_EXHAUSTED"
+      "status": "passed",
+      "gates": [true, true, true, true],
+      "repair_count": 1,
+      "provider": "kimi",
+      "model": "kimi-k2.7-code",
+      "input_tokens": 1683659,
+      "output_tokens": 45600,
+      "commit": "84108ed28b432acaff42d3c94e30629fd257bd5f",
+      "blocker_code": null
     }
   ]
 }
