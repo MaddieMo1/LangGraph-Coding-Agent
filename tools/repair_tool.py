@@ -130,19 +130,43 @@ class RepairTool:
                 "LLM 修复结果为空"
             )
 
+        block_pattern = (
+            r"^[ \t]*(?:\*\*)?FILE\s*:\s*(.+?)(?:\*\*)?[ \t]*\r?\n"
+            r"[ \t]*(?:\*\*)?CODE_START(?:\*\*)?[ \t]*\r?\n"
+            r"(.*?)"
+            r"^[ \t]*(?:\*\*)?CODE_END(?:\*\*)?[ \t]*$"
+        )
         matches = re.findall(
-            r"FILE:(.*?)\r?\nCODE_START\r?\n(.*?)CODE_END",
+            block_pattern,
             content,
-            re.S
+            re.S | re.M | re.I
         )
         changes = []
 
         if matches:
+            unmatched_content = re.sub(
+                block_pattern,
+                "",
+                content,
+                flags=re.S | re.M | re.I,
+            )
+            if re.search(r"^\s*(?:\*\*)?FILE\s*:", unmatched_content, re.M | re.I):
+                return self._failure(
+                    "llm",
+                    "LLM 修复结果包含未封装的多文件边界",
+                    "MODEL_OUTPUT_FILE_BOUNDARY_ERROR",
+                )
             for file_name, code in matches:
                 changes.append(
-                    (file_name.strip(), code.strip())
+                    (file_name.strip(), extract_code(code))
                 )
         elif target_file:
+            if re.search(r"^\s*(?:\*\*)?FILE\s*:", content, re.M | re.I):
+                return self._failure(
+                    "llm",
+                    "LLM 修复结果包含未封装的多文件边界",
+                    "MODEL_OUTPUT_FILE_BOUNDARY_ERROR",
+                )
             code = extract_code(content)
 
             if code:
@@ -246,6 +270,11 @@ class RepairTool:
             self.generated_root
         ).replace("\\", "/")
 
+        if relative_name.lower().endswith("tests.cs"):
+            raise ValueError(
+                f"测试文件不属于生产代码 Repair 范围:{file_name}"
+            )
+
         return candidate, relative_name
 
 
@@ -259,7 +288,7 @@ class RepairTool:
             )
 
 
-    def _failure(self, operation, error):
+    def _failure(self, operation, error, error_code="REPAIR_TOOL_ERROR"):
         return {
             "type": operation,
             "success": False,
@@ -268,6 +297,6 @@ class RepairTool:
             "changes": [],
             "patches": [],
             "patch_ids": [],
-            "error_code": "REPAIR_TOOL_ERROR",
+            "error_code": error_code,
             "error": error
         }

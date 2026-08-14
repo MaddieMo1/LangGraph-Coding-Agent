@@ -1,10 +1,46 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+
+
+COMPILATION_ERROR_PATTERN = re.compile(
+    r"(?P<file>[^\r\n]+?\.cs)"
+    r"\((?P<line>\d+),(?P<column>\d+)\)"
+    r": error (?P<code>CS\d+): (?P<message>.*)"
+)
+
+
+def parse_compilation_errors(log):
+    errors = []
+    seen = set()
+    for match in COMPILATION_ERROR_PATTERN.finditer(str(log or "")):
+        item = {
+            "test": "",
+            "file": os.path.basename(match.group("file").replace("\\", "/")),
+            "line": int(match.group("line")),
+            "column": int(match.group("column")),
+            "code": match.group("code"),
+            "message": match.group("message").strip(),
+            "stack_trace": "",
+        }
+        key = (item["file"], item["line"], item["column"], item["code"], item["message"])
+        if key not in seen:
+            seen.add(key)
+            errors.append(item)
+    return errors
+
+
+def is_test_assembly_compile_failure(result):
+    result = result or {}
+    return (
+        result.get("error_code") == "TEST_ASSEMBLY_COMPILE_ERROR"
+        or bool(parse_compilation_errors(result.get("raw", "")))
+    )
 
 
 class UnityTestTool:
@@ -71,10 +107,21 @@ class UnityTestTool:
             raw = self._read_log(log_path)
 
             if not os.path.isfile(results_path):
-                result = self._system_error(
-                    f"Unity Test Runner did not create result XML (exit code {exit_code})",
-                    raw,
-                )
+                compilation_errors = parse_compilation_errors(raw)
+                if compilation_errors:
+                    result = self._compilation_error(compilation_errors, raw)
+                    result.update(
+                        {
+                            "production_files": production_files,
+                            "test_files": test_files,
+                            "exit_code": exit_code,
+                        }
+                    )
+                else:
+                    result = self._system_error(
+                        f"Unity Test Runner did not create result XML (exit code {exit_code})",
+                        raw,
+                    )
             else:
                 try:
                     with open(results_path, "r", encoding="utf-8-sig") as file:
@@ -345,6 +392,31 @@ class UnityTestTool:
             "test_files": [],
             "exit_code": None,
             "raw": raw[-100000:],
+            "sandbox_project": "",
+            "sandbox_cleaned": True,
+        }
+
+    @staticmethod
+    def _compilation_error(errors, raw=""):
+        return {
+            "success": False,
+            "system_error": False,
+            "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+            "platform": "EditMode",
+            "summary": {
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "inconclusive": 0,
+                "duration": 0.0,
+            },
+            "tests": [],
+            "errors": errors,
+            "production_files": [],
+            "test_files": [],
+            "exit_code": None,
+            "raw": str(raw or "")[-100000:],
             "sandbox_project": "",
             "sandbox_cleaned": True,
         }

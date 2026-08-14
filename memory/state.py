@@ -81,6 +81,7 @@ class AgentState(TypedDict):
     code: List[Dict[str, Any]]
     proposed_changes: List[Dict[str, str]]
     proposal_source: str
+    test_generation_resume_source: str
     change_proposal: Dict[str, Any]
     approval_request: Dict[str, Any]
     approval_result: Dict[str, Any]
@@ -89,6 +90,8 @@ class AgentState(TypedDict):
     approved_changes: List[Dict[str, str]]
     generated_tests: List[Dict[str, Any]]
     test_generation_result: Dict[str, Any]
+    test_generation_feedback: Dict[str, Any]
+    test_generation_retry_count: int
     retry_result: Dict[str, Any]
     repair_retry_result: Dict[str, Any]
 

@@ -28,7 +28,37 @@ class ExpansivePlannerLLM:
         """
 
 
+class PathPlannerLLM:
+    def invoke(self, prompt):
+        return """
+        {
+            "files": [
+                {
+                    "name": "Assets/CodingAgentTest/Runtime/SafeCounter.cs",
+                    "description": "安全计数器"
+                }
+            ]
+        }
+        """
+
+
 class FilePlannerAgentTest(unittest.TestCase):
+    def test_explicit_single_file_request_normalizes_planner_path(self):
+        result = FilePlannerAgent(PathPlannerLLM()).run(
+            {
+                "query": "在现有 Unity 项目中新建 SafeCounter.cs，仅修改这一个文件。",
+                "architecture": "",
+                "project_context": {},
+                "dependency_graph": {},
+                "agent_history": [],
+            }
+        )
+
+        self.assertEqual(
+            [{"name": "SafeCounter.cs", "description": "安全计数器"}],
+            result["files"],
+        )
+
     def test_explicit_single_file_request_rejects_model_scope_expansion(self):
         result = FilePlannerAgent(ExpansivePlannerLLM()).run(
             {

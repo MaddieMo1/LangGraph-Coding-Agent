@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "suite": "day14-core",
+  "cases": [
+    {
+      "case_id": "first-pass-success",
+      "category": "first_pass",
+      "complexity": "simple",
+      "runs": [
+        {"run_id": "run-1", "source": "fixture", "state": {"repair_count": 0, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}], "test_history": [{}], "review_history": [{}], "repair_history": [], "model_routing_history": [{"role": "coder", "provider": "deepseek", "model": "flash", "usage_available": true}], "model_usage": {"deepseek/flash": {"input_tokens": 100, "output_tokens": 50, "requests": 2, "latency_ms": 1000}}}},
+        {"run_id": "run-2", "source": "fixture", "state": {"repair_count": 0, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}], "test_history": [{}], "review_history": [{}], "repair_history": [], "model_routing_history": [{"role": "coder", "provider": "deepseek", "model": "flash", "usage_available": true}], "model_usage": {"deepseek/flash": {"input_tokens": 105, "output_tokens": 55, "requests": 2, "latency_ms": 1100}}}},
+        {"run_id": "run-3", "source": "fixture", "state": {"repair_count": 0, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}], "test_history": [{}], "review_history": [{}], "repair_history": [], "model_routing_history": [{"role": "coder", "provider": "qwen", "model": "plus", "usage_available": true}], "model_usage": {"qwen/plus": {"input_tokens": 110, "output_tokens": 60, "requests": 2, "latency_ms": 1200}}}}
+      ]
+    },
+    {
+      "case_id": "repair-once-success",
+      "category": "repair",
+      "complexity": "standard",
+      "runs": [
+        {"run_id": "run-1", "source": "fixture", "state": {"repair_count": 1, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": true}], "model_usage": {"deepseek/pro": {"input_tokens": 220, "output_tokens": 90, "requests": 3, "latency_ms": 2400}}}},
+        {"run_id": "run-2", "source": "fixture", "state": {"repair_count": 1, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": true}], "model_usage": {"deepseek/pro": {"input_tokens": 230, "output_tokens": 95, "requests": 3, "latency_ms": 2500}}}},
+        {"run_id": "run-3", "source": "fixture", "state": {"repair_count": 1, "code_check_result": {"success": true}, "compile_result": {"success": true, "system_error": false}, "test_result": {"success": true, "system_error": false}, "review": {"pass": true}, "git_status": "committed", "compile_history": [{}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": true}], "model_usage": {"deepseek/pro": {"input_tokens": 240, "output_tokens": 100, "requests": 3, "latency_ms": 2600}}}}
+      ]
+    },
+    {
+      "case_id": "repair-exhausted",
+      "category": "terminal_failure",
+      "complexity": "complex",
+      "runs": [
+        {"run_id": "run-1", "source": "fixture", "state": {"repair_count": 3, "code_check_result": {"success": true}, "compile_result": {"success": false, "system_error": false}, "test_result": {"success": false, "system_error": false}, "review": {"pass": false}, "compile_history": [{}, {}, {}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}, {}, {}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": true}], "model_usage": {"deepseek/pro": {"input_tokens": 400, "output_tokens": 180, "requests": 6, "latency_ms": 5000}}}},
+        {"run_id": "run-2", "source": "fixture", "state": {"repair_count": 3, "code_check_result": {"success": true}, "compile_result": {"success": false, "system_error": false}, "test_result": {"success": false, "system_error": false}, "review": {"pass": false}, "compile_history": [{}, {}, {}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}, {}, {}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": true}], "model_usage": {"deepseek/pro": {"input_tokens": 410, "output_tokens": 185, "requests": 6, "latency_ms": 5100}}}},
+        {"run_id": "run-3", "source": "fixture", "state": {"repair_count": 3, "code_check_result": {"success": true}, "compile_result": {"success": false, "system_error": false}, "test_result": {"success": false, "system_error": false}, "review": {"pass": false}, "compile_history": [{}, {}, {}, {}], "test_history": [{}], "review_history": [{}], "repair_history": [{}, {}, {}], "model_routing_history": [{"role": "repair", "provider": "deepseek", "model": "pro", "usage_available": false}], "model_usage": {}}}
+      ]
+    },
+    {
+      "case_id": "model-route-failure",
+      "category": "model_failure",
+      "complexity": "standard",
+      "runs": [
+        {"run_id": "run-1", "source": "fixture", "state": {"repair_count": 0, "model_error": {"type": "provider_failure"}, "model_routing_history": [{"role": "coder", "provider": "deepseek", "model": "flash", "usage_available": false}], "model_usage": {}}},
+        {"run_id": "run-2", "source": "fixture", "state": {"repair_count": 0, "model_error": {"type": "provider_failure"}, "model_routing_history": [{"role": "coder", "provider": "deepseek", "model": "flash", "usage_available": false}], "model_usage": {}}},
+        {"run_id": "run-3", "source": "fixture", "state": {"repair_count": 0, "model_error": {"type": "provider_failure"}, "model_routing_history": [{"role": "coder", "provider": "qwen", "model": "plus", "usage_available": false}], "model_usage": {}}}
+      ]
+    },
+    {
+      "case_id": "unity-system-blocked",
+      "category": "environment_blocked",
+      "complexity": "standard",
+      "runs": [
+        {"run_id": "run-1", "source": "fixture", "state": {"repair_count": 0, "compile_result": {"success": false, "system_error": true}, "model_routing_history": [], "model_usage": {}}},
+        {"run_id": "run-2", "source": "fixture", "state": {"repair_count": 0, "compile_result": {"success": false, "system_error": true}, "model_routing_history": [], "model_usage": {}}},
+        {"run_id": "run-3", "source": "fixture", "state": {"repair_count": 0, "compile_result": {"success": false, "system_error": true}, "model_routing_history": [], "model_usage": {}}}
+      ]
+    }
+  ]
+}

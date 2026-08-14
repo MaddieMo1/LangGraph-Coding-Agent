@@ -61,6 +61,11 @@ def _failure(state):
     if state.get("current_agent") != "finish_task":
         return "", ""
 
+    model_error = state.get("model_error", {}) or {}
+    if model_error:
+        role = str(model_error.get("role", "") or "model")
+        return role, _result_error(model_error) or "模型路由失败"
+
     checks = (
         ("test_generator", "test_generation_result"),
         ("code_checker", "code_check_result"),
@@ -164,6 +169,8 @@ def map_agent_state(state):
         "unity_compiler": "code",
         "unity_test": "code",
         "reviewer": "code",
+        "repair": "code",
+        "model": "code",
     }.get(failed_gate, "")
 
     return {

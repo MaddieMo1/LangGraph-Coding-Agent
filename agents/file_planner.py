@@ -267,9 +267,18 @@ class FilePlannerAgent:
         if len(requested) != 1:
             return files
         target = requested[0].lower()
-        return [
+        matched = [
             file_info
             for file_info in files
             if isinstance(file_info, dict)
-            and str(file_info.get("name", "")).lower() == target
+            and str(file_info.get("name", "")).replace("\\", "/").rsplit("/", 1)[-1].lower()
+            == target
+        ]
+        if matched:
+            return [{**matched[0], "name": requested[0]}]
+        return [
+            {
+                "name": requested[0],
+                "description": f"实现用户明确要求的 {requested[0]}，不修改其他生产文件。",
+            }
         ]

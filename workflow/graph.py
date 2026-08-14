@@ -445,6 +445,8 @@ class AgentWorkflow:
 
     def unity_test_router(self,state):
         test_result = state.get("test_result", {})
+        if test_result.get("error_code") == "TEST_ASSEMBLY_COMPILE_ERROR":
+            return "finish_task"
         if test_result.get("system_error", False):
             return "finish_task"
         return "reviewer"

@@ -68,7 +68,12 @@ class UnityTestToolTest(unittest.TestCase):
         )
 
     @staticmethod
-    def _process_factory(xml_content=None, returncode=0, stay_running=False):
+    def _process_factory(
+        xml_content=None,
+        returncode=0,
+        stay_running=False,
+        log_content="",
+    ):
         class FakeProcess:
             def __init__(self, command, **kwargs):
                 self.returncode = None if stay_running else returncode
@@ -76,6 +81,10 @@ class UnityTestToolTest(unittest.TestCase):
                     results_path = command[command.index("-testResults") + 1]
                     with open(results_path, "w", encoding="utf-8") as file:
                         file.write(xml_content)
+                if log_content:
+                    log_path = command[command.index("-logFile") + 1]
+                    with open(log_path, "w", encoding="utf-8") as file:
+                        file.write(log_content)
 
             def poll(self):
                 return self.returncode
@@ -135,6 +144,24 @@ class UnityTestToolTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertTrue(result["system_error"])
         self.assertIn("result XML", result["errors"][0]["message"])
+
+    def test_missing_xml_with_test_compilation_errors_is_retryable_code_failure(self):
+        result = self._tool(
+            self._process_factory(
+                returncode=1,
+                log_content=(
+                    "Assets\\Tests\\EditMode\\DragEventsTests.cs(12,33): "
+                    "error CS0246: The type or namespace name 'GameObject' could not be found\n"
+                    "Scripts have compiler errors.\n"
+                ),
+            )
+        ).run()
+
+        self.assertFalse(result["success"])
+        self.assertFalse(result["system_error"])
+        self.assertEqual("TEST_ASSEMBLY_COMPILE_ERROR", result["error_code"])
+        self.assertEqual("DragEventsTests.cs", result["errors"][0]["file"])
+        self.assertEqual("CS0246", result["errors"][0]["code"])
 
     def test_running_process_is_stopped_after_result_xml(self):
         result = self._tool(

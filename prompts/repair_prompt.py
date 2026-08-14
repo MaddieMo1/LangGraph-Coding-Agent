@@ -28,9 +28,9 @@ def repair_prompt(
     return f"""
 你是一名资深Unity C#工程师。
 
-你的任务是修复Unity项目中的代码编译错误。
+你的任务是根据 Reviewer、Unity Compiler 或 EditMode 测试证据修复 Unity 项目代码。
 
-当前代码经过Unity Compiler检测，存在多个错误。
+当前代码未通过至少一个质量门禁。
 
 你需要一次性分析并修复所有问题。
 
@@ -71,7 +71,7 @@ Compiler错误列表
 修复目标
 =========================
 
-1. 修复所有Compiler错误。
+1. 修复 Root Cause 和剩余问题中记录的所有问题。
 
 2. 保持原有代码架构。
 

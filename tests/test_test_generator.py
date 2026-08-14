@@ -100,6 +100,66 @@ class TestGeneratorAgentTest(unittest.TestCase):
         self.assertEqual("TEST_GENERATION_TOOL_ERROR", result["test_generation_result"]["error_code"])
         self.assertEqual(1, len(llm.prompts))
 
+    def test_retry_prompt_contains_test_compilation_diagnostics(self):
+        llm = FakeLLM(
+            '{"tests":[{"name":"DragEventsTests.cs",'
+            '"content":"public class DragEventsTests {}"}]}'
+        )
+        agent = TestGeneratorAgent(llm, self.tool)
+
+        result = agent.run(
+            {
+                "query": "生成拖拽代码",
+                "code": [{"file": "DragEvents.cs", "content": "public class DragEvents {}"}],
+                "test_generation_feedback": {
+                    "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                    "errors": [
+                        {
+                            "file": "DragEventsTests.cs",
+                            "line": 12,
+                            "code": "CS0246",
+                            "message": "GameObject could not be found",
+                        }
+                    ],
+                },
+                "proposal_source": "coder",
+                "test_generation_resume_source": "repair",
+                "agent_history": [],
+            }
+        )
+
+        self.assertTrue(result["test_generation_result"]["success"])
+        self.assertEqual("repair", result["proposal_source"])
+        self.assertEqual("", result["test_generation_resume_source"])
+        self.assertIn("TEST_ASSEMBLY_COMPILE_ERROR", llm.prompt)
+        self.assertIn("GameObject.AddComponent<T>()", llm.prompt)
+        self.assertIn("Game.DragSystem.DragManager", llm.prompt)
+        self.assertIn("CS0246", llm.prompt)
+        self.assertIn("GameObject could not be found", llm.prompt)
+
+    def test_limits_generation_context_to_approved_task_files(self):
+        llm = FakeLLM(
+            '{"tests":[{"name":"DragEventsTests.cs",'
+            '"content":"public class DragEventsTests {}"}]}'
+        )
+
+        result = TestGeneratorAgent(llm, self.tool).run(
+            {
+                "query": "生成拖拽代码",
+                "code": [
+                    {"file": "DragEvents.cs", "content": "public class DragEvents {}"},
+                    {"file": "InventoryData.cs", "content": "public class InventoryData {}"},
+                ],
+                "approved_changes": [{"file": "DragEvents.cs"}],
+                "agent_history": [],
+            }
+        )
+
+        self.assertTrue(result["test_generation_result"]["success"])
+        self.assertIn("DragEvents.cs", llm.prompt)
+        self.assertNotIn("InventoryData.cs", llm.prompt)
+        self.assertIn("唯一允许测试", llm.prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "suite": "day14-real",
+  "scenarios": [
+    {
+      "acceptance_id": "day14-real-first-pass",
+      "scenario": "first_pass",
+      "status": "passed",
+      "gates": [true, true, true, true],
+      "repair_count": 0,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "input_tokens": 838956,
+      "output_tokens": 13999,
+      "commit": "e5ecd3796057e1751feb4bf681cff10301737668",
+      "blocker_code": null
+    },
+    {
+      "acceptance_id": "day14-real-repair",
+      "scenario": "repair_success",
+      "status": "failed",
+      "gates": [true, false, true, false],
+      "repair_count": 3,
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "input_tokens": 2031668,
+      "output_tokens": 104908,
+      "commit": null,
+      "blocker_code": "REPAIR_EXHAUSTED"
+    }
+  ]
+}

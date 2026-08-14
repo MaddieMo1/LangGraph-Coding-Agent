@@ -115,6 +115,33 @@ CODE_END"""
             os.path.exists(os.path.join(self.generated_root, "InventoryView.cs"))
         )
 
+    def test_accepts_markdown_wrapped_multi_file_boundaries(self):
+        content = """**FILE: InventoryData.cs**
+**CODE_START**
+```csharp
+public class InventoryData {}
+```
+**CODE_END**
+
+**FILE: InventoryView.cs**
+**CODE_START**
+```csharp
+public class InventoryView {}
+```
+**CODE_END**"""
+
+        result = self.tool.apply_llm_result(content)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            ["InventoryData.cs", "InventoryView.cs"],
+            result["files"],
+        )
+        self.assertEqual(
+            "public class InventoryData {}",
+            result["changes"][0]["content"],
+        )
+
     def test_single_file_llm_result_does_not_modify_source(self):
         path = self.write_source(
             "InventoryManager.cs",
@@ -131,6 +158,52 @@ CODE_END"""
             self.file_manager.read_file(path),
             "public class InventoryManager {}\n"
         )
+
+    def test_rejects_test_files_from_production_repair_scope(self):
+        result = self.tool.apply_llm_result(
+            "using NUnit.Framework; public class DragSystemTests {}",
+            "DragSystemTests.cs",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertIn("Repair", result["error"])
+        self.assertFalse(os.path.exists(os.path.join(self.generated_root, "DragSystemTests.cs")))
+
+    def test_single_file_fallback_rejects_unwrapped_file_markers(self):
+        content = """using System;
+
+public class InventoryManager {}
+
+FILE:InventoryView.cs
+
+using UnityEngine;
+public class InventoryView : MonoBehaviour {}
+"""
+
+        result = self.tool.apply_llm_result(
+            content,
+            "InventoryManager.cs",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual("MODEL_OUTPUT_FILE_BOUNDARY_ERROR", result["error_code"])
+        self.assertEqual([], result["changes"])
+        self.assertNotIn("InventoryView.cs", result["error"])
+
+    def test_multi_file_output_rejects_additional_unwrapped_file_marker(self):
+        content = """FILE:InventoryManager.cs
+CODE_START
+public class InventoryManager {}
+CODE_END
+FILE:InventoryView.cs
+public class InventoryView {}
+"""
+
+        result = self.tool.apply_llm_result(content)
+
+        self.assertFalse(result["success"])
+        self.assertEqual("MODEL_OUTPUT_FILE_BOUNDARY_ERROR", result["error_code"])
+        self.assertEqual([], result["changes"])
 
     def test_collect_context_uses_validated_files(self):
         self.write_source(

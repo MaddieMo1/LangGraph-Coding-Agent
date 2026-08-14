@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 from html import escape
+import re
 from zoneinfo import ZoneInfo
 
 import gradio as gr
 
+from tools.unity_test_tool import is_test_assembly_compile_failure
 from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state
 
 
@@ -21,6 +23,39 @@ APPROVAL_CSS = """
     --deck-violet: #9b7cff;
     --deck-green: #4fd39a;
     --deck-red: #ff6376;
+    scrollbar-width: thin;
+    scrollbar-color: #52758f #0d1c2d;
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #52758f #0d1c2d;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: #0d1c2d;
+}
+
+*::-webkit-scrollbar-thumb {
+    min-width: 40px;
+    min-height: 40px;
+    border: 2px solid #0d1c2d;
+    border-radius: 999px;
+    background: #52758f;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #35c9dc;
+}
+
+*::-webkit-scrollbar-corner {
+    background: #0d1c2d;
 }
 
 html, body {
@@ -1629,17 +1664,60 @@ button#task-center-refresh:hover {
     position: fixed;
     z-index: 30;
     top: 88px;
+    bottom: 0;
     right: 0;
     width: min(520px, 92vw);
-    height: calc(100vh - 88px);
+    height: auto !important;
+    box-sizing: border-box !important;
     padding: 24px !important;
     border-left: 1px solid var(--deck-line) !important;
     color: var(--deck-text) !important;
     background: #091525 !important;
     box-shadow: -20px 0 50px rgba(0, 0, 0, .34);
-    overflow-y: auto;
+    overflow-x: hidden !important;
+    overflow: hidden !important;
     --block-background-fill: #091525;
     --background-fill-primary: #091525;
+}
+#task-detail-drawer > .form,
+#task-detail-drawer.form {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+#task-detail-content {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 286px) !important;
+    padding-right: 8px !important;
+    overflow-x: hidden !important;
+    overflow-y: scroll !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+#task-detail-content > div,
+#task-detail-content .html-container,
+#task-detail-content .prose {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+#task-detail-actions {
+    flex: 0 0 auto !important;
+    gap: 8px !important;
+    width: 100% !important;
+}
+#task-detail-open,
+#task-detail-delete,
+#task-detail-close {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-height: 42px !important;
 }
 #task-detail-drawer > .form,
 #task-delete-confirm > .form,
@@ -1880,6 +1958,27 @@ button#task-center-refresh:hover {
 APPROVAL_JS = r"""
 (() => {
     document.documentElement.style.colorScheme = "dark";
+    const formatElapsed = (milliseconds) => {
+        const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) return `${hours}小时 ${minutes}分 ${seconds}秒`;
+        if (minutes > 0) return `${minutes}分 ${seconds}秒`;
+        return `${seconds}秒`;
+    };
+    const updateExecutionTimers = () => {
+        document.querySelectorAll('[data-execution-started-at]').forEach((node) => {
+            const startedAt = Date.parse(node.dataset.executionStartedAt || '');
+            const endedAt = Date.parse(node.dataset.executionEndedAt || '');
+            if (Number.isNaN(startedAt)) return;
+            node.textContent = formatElapsed((Number.isNaN(endedAt) ? Date.now() : endedAt) - startedAt);
+        });
+    };
+    updateExecutionTimers();
+    if (!window.__executionTimerInterval) {
+        window.__executionTimerInterval = window.setInterval(updateExecutionTimers, 1000);
+    }
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     if (document.getElementById("neural-particles")) return;
 
@@ -2348,7 +2447,7 @@ def format_workflow_rail(status, current_agent="", approval_status="", failed_ga
     }
     validation_failures = {
         "test_generator", "code_checker", "unity_compiler", "unity_test",
-        "reviewer", "git",
+        "reviewer", "repair", "git",
     }
     error_index = -1
     if status == "running":
@@ -2449,6 +2548,34 @@ def format_task_time(updated_at):
         return parsed.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
     except (ValueError, TypeError):
         return "时间未知"
+
+
+def format_elapsed_time(started_at, ended_at="", now=None):
+    if not isinstance(started_at, str) or not started_at.strip():
+        return "—"
+
+    def parse_timestamp(value):
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    try:
+        start = parse_timestamp(started_at)
+        end = parse_timestamp(ended_at) if ended_at else (now or datetime.now(timezone.utc))
+    except (ValueError, TypeError, AttributeError):
+        return "—"
+    total_seconds = max(0, int((end - start).total_seconds()))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}小时 {minutes}分 {seconds}秒"
+    if minutes:
+        return f"{minutes}分 {seconds}秒"
+    return f"{seconds}秒"
 
 
 def format_task_choices(tasks):
@@ -2605,6 +2732,20 @@ def format_task_center_detail(thread_id, tasks):
     if model_route.get("provider") or model_route.get("model"):
         model_name = f'{model_route.get("provider", "—")} / {model_route.get("model", "—")}'
     fallback_label = "已回退" if model_route.get("fallback_used") else "未回退"
+    gate_label = lambda value: "通过" if value is True else ("失败" if value is False else "未记录")
+    test_label = gate_label(selected.get("test_passed"))
+    if selected.get("test_total") is not None and selected.get("test_passed_count") is not None:
+        test_label += f' · {int(selected.get("test_passed_count") or 0)} / {int(selected.get("test_total") or 0)}'
+    review_label = gate_label(selected.get("review_passed"))
+    if selected.get("review_score") is not None:
+        review_label += f' · {int(selected.get("review_score") or 0)} 分'
+    acceptance_label = {
+        "zero_repair_success": "零修复成功",
+        "repair_success": "Repair 后成功",
+        "environment_blocked": "环境阻塞",
+        "failed": "验收失败",
+        "not_finished": "尚未完成",
+    }.get(selected.get("acceptance_result"), "未记录")
     return (
         '<div class="task-drawer-content">'
         f'<div class="task-drawer-status">{escape(status)}</div>'
@@ -2612,9 +2753,19 @@ def format_task_center_detail(thread_id, tasks):
         f'<p>{escape(error)}</p>'
         '<dl>'
         f'<dt>当前阶段</dt><dd>{escape(selected.get("current_agent") or "等待后续操作")}</dd>'
+        + (
+            f'<dt>失败门禁</dt><dd>{escape(AGENT_LABELS.get(selected.get("failed_gate"), selected.get("failed_gate")))}</dd>'
+            if selected.get("failed_gate") else ""
+        )
+        +
         f'<dt>最后执行</dt><dd>{escape(format_task_time(selected.get("updated_at", "")))}</dd>'
         f'<dt>Repair</dt><dd>{int(selected.get("repair_count", 0) or 0)} 轮</dd>'
         f'<dt>已批准文件</dt><dd>{int(selected.get("approved_file_count", 0) or 0)} 个</dd>'
+        f'<dt>验收结论</dt><dd>{escape(acceptance_label)}</dd>'
+        f'<dt>质量门禁</dt><dd>Code Checker：{escape(gate_label(selected.get("code_check_passed")))}</dd>'
+        f'<dt>Unity 编译</dt><dd>{escape(gate_label(selected.get("compile_passed")))}</dd>'
+        f'<dt>EditMode 测试</dt><dd>{escape(test_label)}</dd>'
+        f'<dt>Reviewer</dt><dd>{escape(review_label)}</dd>'
         f'<dt>Git 状态</dt><dd>{escape(selected.get("git_status") or "—")}</dd>'
         f'<dt>任务分支</dt><dd class="is-code">{escape(selected.get("git_branch") or "—")}</dd>'
         f'<dt>基础提交</dt><dd class="is-code">{escape(selected.get("git_base_commit") or "—")}</dd>'
@@ -2818,6 +2969,19 @@ def format_execution_panel(view):
             ("Repair", "repair_summary"),
         )
     )
+    started_at = str(view.get("started_at", "") or "")
+    ended_at = str(view.get("ended_at", "") or "")
+    elapsed = format_elapsed_time(started_at, ended_at)
+    timing_details = (
+        '<div class="detail-row">'
+        f'<span>开始时间</span><strong>{escape(format_task_time(started_at) if started_at else "—")}</strong>'
+        "</div>"
+        '<div class="detail-row">'
+        '<span>执行耗时</span>'
+        f'<strong data-execution-started-at="{escape(started_at)}" '
+        f'data-execution-ended-at="{escape(ended_at)}">{escape(elapsed)}</strong>'
+        "</div>"
+    )
     error = view_state.get("error_summary", "")
     error_html = (
         f'<div class="execution-error" role="alert">{escape(error)}</div>' if error else ""
@@ -2829,7 +2993,7 @@ def format_execution_panel(view):
         f'<div class="review-copy">当前节点 · {escape(current)}</div>'
         "</div>"
         f'{error_html}<div class="gate-grid">{gates}</div>'
-        f'<div class="detail-grid">{details}</div>'
+        f'<div class="detail-grid">{timing_details}{details}</div>'
         f'<div class="recovery-copy">{escape(view.get("recovery_hint", ""))}</div>'
         '<div class="execution-boundary">只创建本地任务分支与提交；不执行 push、PR、merge、rebase 或 reset。</div>'
     )
@@ -2918,6 +3082,22 @@ class ApprovalController:
         snapshot = self.runtime.get_state(thread_id)
         return self._with_active_task(
             self._view_from_result(thread_id.strip(), snapshot.values)
+        )
+
+    def restore_latest_view(self, tasks=None):
+        tasks = list(tasks if tasks is not None else self.list_tasks())
+        if not tasks:
+            return self._with_active_task(
+                self._view_from_result("", {}),
+                resolve_active=False,
+            )
+        active_task = next((task for task in tasks if task.get("is_active")), None)
+        selected = active_task or tasks[0]
+        snapshot = self.runtime.get_state(selected["thread_id"])
+        return self._with_active_task(
+            self._view_from_result(selected["thread_id"], snapshot.values),
+            active_task=active_task,
+            resolve_active=False,
         )
 
     def active_task_view(self):
@@ -3009,10 +3189,12 @@ class ApprovalController:
         )
         return view
 
-    def _with_active_task(self, view, active_task=None):
+    def _with_active_task(self, view, active_task=None, resolve_active=True):
+        view = self._with_task_timing(view)
         if not hasattr(self.runtime, "find_active_task"):
             return view
-        active_task = active_task or self.runtime.find_active_task()
+        if active_task is None and resolve_active:
+            active_task = self.runtime.find_active_task()
         if active_task is None:
             view.update(
                 {
@@ -3042,6 +3224,20 @@ class ApprovalController:
         )
         if not is_owner:
             view["can_archive_dirty"] = False
+        return view
+
+    def _with_task_timing(self, view):
+        thread_id = str(view.get("thread_id", "") or "").strip()
+        view.setdefault("started_at", "")
+        view.setdefault("ended_at", "")
+        if not thread_id or not hasattr(self.runtime, "thread_timing"):
+            return view
+        timing = self.runtime.thread_timing(thread_id)
+        view["started_at"] = timing.get("started_at", "")
+        if view.get("status") in {"completed", "failed", "rejected", "conflicted"}:
+            view["ended_at"] = timing.get("updated_at", "")
+        else:
+            view["ended_at"] = ""
         return view
 
     def archive_dirty(self, thread_id):
@@ -3088,18 +3284,24 @@ class ApprovalController:
             **(snapshot.values or {}),
             "current_agent": "test_generator",
             "test_generation_result": {},
+            "test_result": {},
+            "review": {},
             "retry_result": {"success": True, "status": "retrying"},
         }
-        yield self._view_from_result(
-            normalized_thread_id,
-            progress,
-            default_status="running",
+        yield self._with_active_task(
+            self._view_from_result(
+                normalized_thread_id,
+                progress,
+                default_status="running",
+            )
         )
         for result in self.runtime.retry_test_generation_stream(normalized_thread_id):
-            yield self._view_from_result(
-                normalized_thread_id,
-                result,
-                default_status="running",
+            yield self._with_active_task(
+                self._view_from_result(
+                    normalized_thread_id,
+                    result,
+                    default_status="running",
+                )
             )
 
     def retry_failed_repair_stream(self, thread_id):
@@ -3107,9 +3309,10 @@ class ApprovalController:
         if not normalized_thread_id:
             raise ValueError("当前没有可重新修复的任务")
         snapshot = self.runtime.get_state(normalized_thread_id)
+        retrying_generation = self._can_retry_missing_generation(snapshot.values or {})
         progress = {
             **(snapshot.values or {}),
-            "current_agent": "reviewer",
+            "current_agent": "file_planner" if retrying_generation else "reviewer",
             "review": {},
             "root_causes": [],
             "repair_count": 0,
@@ -3204,16 +3407,20 @@ class ApprovalController:
             "approval_status": "applying",
             "current_agent": "human_approval",
         }
-        yield self._view_from_result(
-            normalized_thread_id,
-            progress,
-            default_status="running",
+        yield self._with_active_task(
+            self._view_from_result(
+                normalized_thread_id,
+                progress,
+                default_status="running",
+            )
         )
         for result in self.runtime.resume_stream(normalized_thread_id, decision):
-            yield self._view_from_result(
-                normalized_thread_id,
-                result,
-                default_status="running",
+            yield self._with_active_task(
+                self._view_from_result(
+                    normalized_thread_id,
+                    result,
+                    default_status="running",
+                )
             )
 
     @staticmethod
@@ -3265,6 +3472,11 @@ class ApprovalController:
             message = f"恢复失败：{retry_result['error']}"
         if (
             repair_retry_result.get("status") == "retrying"
+            and result.get("current_agent") in {"file_planner", "coder"}
+        ):
+            message = "正在原任务中重新规划并生成缺失的生产代码。"
+        elif (
+            repair_retry_result.get("status") == "retrying"
             and result.get("current_agent") in {"reviewer", "repair"}
         ):
             message = "正在保留当前任务和已批准文件，重新分析失败根因并生成 Repair 提案。"
@@ -3294,7 +3506,7 @@ class ApprovalController:
         elif can_retry_test_generation:
             recovery_hint = "生产代码与审批结果已保留；可点击“重试生成测试”从失败节点继续。"
         elif can_retry_failed_repair:
-            recovery_hint = "当前 thread、分支和已批准文件已保留；可点击“重新修复当前任务”继续。"
+            recovery_hint = "当前 thread 与安全 Git 边界已保留；可点击“重试当前任务”从正确节点继续。"
         elif can_retry_baseline_compile:
             recovery_hint = "这是 Unity 环境故障；激活许可证后可在原任务上重新检查基线。"
         elif status in {"failed", "rejected", "conflicted"}:
@@ -3351,7 +3563,90 @@ class ApprovalController:
 
     @staticmethod
     def _can_retry_test_generation(result):
+        def stem(path):
+            name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+            return name[:-3] if name.endswith(".cs") else name
+
         generation = result.get("test_generation_result", {})
+        test_result = result.get("test_result", {}) or {}
+        retry_count = int(result.get("test_generation_retry_count", 0) or 0)
+        feedback = result.get("test_generation_feedback", {}) or {}
+        retry_result = result.get("retry_result", {}) or {}
+        interrupted_retry = (
+            feedback.get("error_code") in {
+                "TEST_ASSEMBLY_COMPILE_ERROR",
+                "TEST_EXECUTION_ERROR",
+            }
+            and not generation
+            and retry_result.get("status") == "retrying"
+            and result.get("current_agent") in {
+                "code_checker",
+                "unity_compiler",
+                "unity_test",
+                "finish_task",
+            }
+        )
+        approved = {
+            stem(change.get("file"))
+            for change in (result.get("approved_changes", []) or [])
+            if change.get("file")
+        }
+        unapproved = {
+            stem(item.get("file"))
+            for item in (result.get("code", []) or [])
+            if item.get("file") and stem(item.get("file")) not in approved
+        }
+        generated = {
+            stem(test.get("name")).removesuffix("Tests")
+            for test in (result.get("generated_tests", []) or [])
+            if test.get("name")
+        }
+        scope_mismatch = bool(approved and generated & unapproved)
+        production_test_files = {
+            stem(item.get("file"))
+            for item in (result.get("code", []) or [])
+            if str(item.get("file", "")).lower().endswith("tests.cs")
+            and "NUnit.Framework" in str(item.get("content", ""))
+        }
+        review = result.get("review", {}) or {}
+        review_items = list(review.get("root_causes", []) or []) + list(
+            review.get("remaining_issues", []) or []
+        )
+        review_targets = []
+        for item in review_items:
+            action = item.get("fix_action", {}) or {}
+            target = (
+                action.get("target")
+                or item.get("target_file")
+                or item.get("file")
+                or ""
+            )
+            if target:
+                review_targets.append(stem(target))
+        review_targets_tests = bool(review_targets) and all(
+            target.lower().endswith("tests") for target in review_targets
+        )
+        if (
+            result.get("current_agent") == "finish_task"
+            and result.get("git_status") == "prepared"
+            and result.get("proposal_source") in {"coder", "repair"}
+            and (production_test_files or review_targets_tests)
+        ):
+            return True
+        if interrupted_retry or scope_mismatch or production_test_files:
+            retry_count = max(0, retry_count - 1)
+        common = (
+            (result.get("current_agent") == "finish_task" or interrupted_retry)
+            and (
+                result.get("approval_status") in {"approved", "partially_approved"}
+                or interrupted_retry
+            )
+            and result.get("git_status") == "prepared"
+            and retry_count < 2
+        )
+        if common and result.get("proposal_source") in {"coder", "repair"}:
+            if is_test_assembly_compile_failure(test_result) or interrupted_retry:
+                return True
         errors = [str(error) for error in generation.get("errors", [])]
         legacy_parse_error = any(
             error.startswith("Unable to parse generated tests:")
@@ -3359,10 +3654,8 @@ class ApprovalController:
             for error in errors
         )
         return (
-            result.get("current_agent") == "finish_task"
-            and result.get("approval_status") in {"approved", "partially_approved"}
+            common
             and result.get("proposal_source") == "coder"
-            and result.get("git_status") == "prepared"
             and not generation.get("success", False)
             and (
                 generation.get("error_code") == "MODEL_OUTPUT_PARSE_ERROR"
@@ -3373,6 +3666,10 @@ class ApprovalController:
 
     @staticmethod
     def _can_retry_failed_repair(result):
+        if ApprovalController._can_retry_test_generation(result):
+            return False
+        if ApprovalController._can_retry_missing_generation(result):
+            return True
         compile_result = result.get("compile_result", {}) or {}
         test_result = result.get("test_result", {}) or {}
         if compile_result.get("system_error") or test_result.get("system_error"):
@@ -3401,6 +3698,31 @@ class ApprovalController:
             and result.get("git_status") == "prepared"
             and bool(result.get("approved_changes"))
             and (code_gate_failed or review_failed)
+        )
+
+    @staticmethod
+    def _can_retry_missing_generation(result):
+        requested = list(dict.fromkeys(re.findall(
+            r"(?<![\w.])([A-Za-z_][A-Za-z0-9_]*\.cs)\b",
+            str(result.get("query", "") or ""),
+        )))
+        existing = {
+            str(item.get("file", "")).replace("\\", "/").rsplit("/", 1)[-1].lower()
+            for item in (result.get("code", []) or [])
+            if isinstance(item, dict) and item.get("file")
+        }
+        missing = [name for name in requested if name.lower() not in existing]
+        test_result = result.get("test_result", {}) or {}
+        proposal = result.get("change_proposal", {}) or {}
+        return bool(missing) and (
+            result.get("current_agent") == "finish_task"
+            and result.get("approval_status") == "no_changes"
+            and result.get("proposal_source") == "coder"
+            and result.get("git_status") == "prepared"
+            and not result.get("approved_changes")
+            and not (proposal.get("patches") or [])
+            and test_result.get("success") is False
+            and test_result.get("system_error") is not True
         )
 
     @staticmethod
@@ -3550,8 +3872,14 @@ def build_approval_app(controller, initial_view=None):
                         visible=initial_view.get("can_continue_active", False),
                         elem_id="continue-active-task",
                     )
+                    retry_test_generation = gr.Button(
+                        "重试生成测试",
+                        variant="primary",
+                        visible=initial_view.get("can_retry_test_generation", False),
+                        elem_id="retry-test-generation",
+                    )
                     retry_failed_repair = gr.Button(
-                        "重新修复当前任务",
+                        "重试当前任务",
                         variant="primary",
                         visible=initial_view.get("can_retry_repair_active", False),
                         elem_id="retry-failed-repair",
@@ -3632,12 +3960,6 @@ def build_approval_app(controller, initial_view=None):
                     execution_detail = gr.HTML(
                         format_execution_panel(initial_view),
                         elem_id="execution-detail",
-                    )
-                    retry_test_generation = gr.Button(
-                        "重试生成测试",
-                        variant="primary",
-                        visible=initial_view.get("can_retry_test_generation", False),
-                        elem_id="retry-test-generation",
                     )
 
                 with gr.Group(
@@ -3851,9 +4173,14 @@ def build_approval_app(controller, initial_view=None):
                 elem_id="task-detail-content",
                 apply_default_css=False,
             )
-            open_selected_task = gr.Button("在工作台打开", variant="primary")
-            delete_detail_task = gr.Button("删除任务记录", variant="stop")
-            close_task_detail = gr.Button("关闭")
+            with gr.Column(elem_id="task-detail-actions"):
+                open_selected_task = gr.Button(
+                    "在工作台打开", variant="primary", elem_id="task-detail-open"
+                )
+                delete_detail_task = gr.Button(
+                    "删除任务记录", variant="stop", elem_id="task-detail-delete"
+                )
+                close_task_detail = gr.Button("关闭", elem_id="task-detail-close")
 
         with gr.Group(visible=False, elem_id="task-delete-confirm") as task_delete_confirm:
             delete_confirm_copy = gr.HTML("", elem_id="task-delete-confirm-copy", apply_default_css=False)
@@ -3861,13 +4188,13 @@ def build_approval_app(controller, initial_view=None):
             cancel_batch_delete = gr.Button("取消")
             task_delete_feedback = gr.HTML("", elem_id="task-delete-feedback", apply_default_css=False)
 
-        def render(view):
+        def render(view, tasks=None):
             choices = patch_choices(view["patches"])
             first = view["selected_patch_ids"][0] if view["selected_patch_ids"] else None
             pending = view["status"] == "pending"
             layout = view.get("view_state") or layout_for_mode(view["status"])
             show_execution = layout["show_validation"] or layout["mode"] in {"preflight", "running"}
-            tasks = controller.list_tasks()
+            tasks = list(tasks if tasks is not None else controller.list_tasks())
             if view["thread_id"] and not any(
                 task.get("thread_id") == view["thread_id"] for task in tasks
             ):
@@ -4046,7 +4373,7 @@ def build_approval_app(controller, initial_view=None):
 
         def task_center_snapshot(search_text="", selected_status="all", selected_ids=None):
             tasks = controller.list_tasks()
-            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
+            active = next((task for task in tasks if task.get("is_active")), None)
             active_thread_id = (active or {}).get("thread_id", "")
             prepared = prepare_task_center(
                 tasks,
@@ -4169,8 +4496,17 @@ def build_approval_app(controller, initial_view=None):
         def task_card_action(selected_ids, search_text, selected_status, page, evt: gr.EventData):
             action = getattr(evt, "action", "detail")
             selected_thread_id = getattr(evt, "thread_id", "")
+            if action != "toggle":
+                return (
+                    list(selected_ids or []),
+                    gr.skip(),
+                    selected_thread_id,
+                    gr.update(visible=True),
+                    f"已选择 {len(selected_ids or [])} 项",
+                    gr.update(visible=bool(selected_ids)),
+                )
             tasks = controller.list_tasks()
-            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
+            active = next((task for task in tasks if task.get("is_active")), None)
             active_thread_id = (active or {}).get("thread_id", "")
             selected = list(selected_ids or [])
             if action == "toggle" and selected_thread_id != active_thread_id:
@@ -4233,8 +4569,7 @@ def build_approval_app(controller, initial_view=None):
                 (task for task in tasks if task.get("thread_id") == selected_thread_id),
                 {},
             )
-            active = controller.runtime.find_active_task() if hasattr(controller.runtime, "find_active_task") else None
-            is_active = selected_thread_id == (active or {}).get("thread_id", "")
+            is_active = selected.get("is_active", False)
             return (
                 format_task_center_detail(selected_thread_id, tasks),
                 gr.update(value=task_center_action_label(selected.get("status"))),
@@ -4347,6 +4682,10 @@ def build_approval_app(controller, initial_view=None):
             for view in controller.retry_test_generation_stream(current_thread_id):
                 yield render(view)
 
+        def restore_browser_view():
+            tasks = controller.list_tasks()
+            return render(controller.restore_latest_view(tasks), tasks)
+
         def accept_all_view(current_thread_id, bundle_id, approval_note):
             for view in controller.accept_all_stream(
                 current_thread_id,
@@ -4432,5 +4771,7 @@ def build_approval_app(controller, initial_view=None):
         confirm_batch_delete.click(delete_batch_view, [task_center_selected, task_search, task_status, task_center_page], [task_center_selected, task_cards, task_selection_summary, task_selection_bar, task_delete_confirm, task_delete_feedback, stats_all, stats_active, stats_attention, stats_completed, task_center_page, task_page_info, previous_task_page, next_task_page])
         delete_detail_task.click(delete_detail_view, [task_center_detail_id, task_search, task_status, task_center_page], [task_center_detail_id, task_detail_drawer, task_cards, task_delete_feedback, stats_all, stats_active, stats_attention, stats_completed, task_center_page, task_page_info, previous_task_page, next_task_page])
         open_selected_task.click(open_task_from_center, task_center_detail_id, [*outputs, workspace_grid, task_center_view, task_detail_drawer, workspace_nav, task_center_nav])
+
+        demo.load(restore_browser_view, outputs=outputs, show_progress="hidden")
 
     return demo.queue(default_concurrency_limit=1)

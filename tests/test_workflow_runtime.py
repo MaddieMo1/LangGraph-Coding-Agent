@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from typing import TypedDict
+from unittest.mock import patch
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -11,17 +12,25 @@ from workflow.runtime import WorkflowRuntime
 
 class RuntimeState(TypedDict, total=False):
     request: str
+    query: str
     decision: str
     current_agent: str
     approval_status: str
     proposal_source: str
+    test_generation_resume_source: str
     git_status: str
     test_generation_result: dict
+    test_generation_feedback: dict
+    test_generation_retry_count: int
     retry_result: dict
     generated_tests: list
     git_branch: str
     git_base_commit: str
     approved_changes: list
+    files: list
+    code: list
+    proposed_changes: list
+    change_proposal: dict
     approval_request: dict
     git_result: dict
     repair_count: int
@@ -38,6 +47,7 @@ class RuntimeState(TypedDict, total=False):
     baseline_compile_result: dict
     baseline_compile_status: str
     baseline_retry_result: dict
+    model_error: dict
 
 
 class InterruptingWorkflow:
@@ -67,14 +77,30 @@ class RetryWorkflow:
         builder = StateGraph(RuntimeState)
         builder.add_node("seed", lambda state: {})
         builder.add_node("human_approval", lambda state: {})
-        builder.add_node("test_generator", lambda state: {"decision": "retried"})
+        builder.add_node(
+            "test_generator",
+            lambda state: {
+                "decision": "retried",
+                "proposal_source": state.get("test_generation_resume_source", ""),
+                "test_generation_resume_source": "",
+            },
+        )
         builder.add_edge(START, "seed")
         builder.add_conditional_edges(
             "seed",
             lambda state: "finish",
             {"retry": "human_approval", "finish": END},
         )
-        builder.add_edge("human_approval", "test_generator")
+        builder.add_conditional_edges(
+            "human_approval",
+            lambda state: (
+                "test"
+                if state.get("proposal_source") == "coder"
+                and state.get("approval_status") in {"approved", "partially_approved"}
+                else "finish"
+            ),
+            {"test": "test_generator", "finish": END},
+        )
         builder.add_edge("test_generator", END)
         return builder.compile(checkpointer=checkpointer)
 
@@ -152,6 +178,69 @@ class FailedRepairRetryWorkflow:
         builder.add_edge("change_proposal", "human_approval")
         builder.add_edge("human_approval", END)
         builder.set_entry_point("seed")
+        return builder.compile(checkpointer=checkpointer)
+
+
+class MissingGenerationRetryWorkflow:
+    class GitAgent:
+        class GitTool:
+            @staticmethod
+            def inspect():
+                return {
+                    "success": True,
+                    "branch": "agent/owner",
+                    "head": "a" * 40,
+                    "clean": True,
+                    "changed_files": [],
+                }
+
+        git_tool = GitTool()
+
+    def __init__(self):
+        self.git_agent = self.GitAgent()
+
+    def compile(self, checkpointer=None):
+        builder = StateGraph(RuntimeState)
+
+        def human_approval(state):
+            interrupt({"bundle_id": "coder-bundle", "source": "coder", "patches": []})
+            return {}
+
+        builder.add_node("seed", lambda state: {})
+        builder.add_node("architecture_validator", lambda state: {})
+        builder.add_node(
+            "file_planner",
+            lambda state: {
+                "current_agent": "file_planner",
+                "files": [{"name": "SafeCounter.cs", "description": "counter"}],
+            },
+        )
+        builder.add_node(
+            "coder",
+            lambda state: {
+                "current_agent": "coder",
+                "code": [{"file": "SafeCounter.cs", "content": "public sealed class SafeCounter {}"}],
+                "proposed_changes": [{"file": "SafeCounter.cs", "content": "public sealed class SafeCounter {}"}],
+                "proposal_source": "coder",
+            },
+        )
+        builder.add_node(
+            "change_proposal",
+            lambda state: {
+                "current_agent": "change_proposal",
+                "approval_status": "pending",
+                "change_proposal": {"source": "coder", "patches": [{"file": "SafeCounter.cs"}]},
+                "approval_request": {"bundle_id": "coder-bundle", "source": "coder", "patches": []},
+            },
+        )
+        builder.add_node("human_approval", human_approval)
+        builder.add_edge(START, "seed")
+        builder.add_edge("seed", END)
+        builder.add_edge("architecture_validator", "file_planner")
+        builder.add_edge("file_planner", "coder")
+        builder.add_edge("coder", "change_proposal")
+        builder.add_edge("change_proposal", "human_approval")
+        builder.add_edge("human_approval", END)
         return builder.compile(checkpointer=checkpointer)
 
 
@@ -309,6 +398,175 @@ class WorkflowRuntimeTest(unittest.TestCase):
         }
         self.assertFalse(WorkflowRuntime.is_retryable_failed_repair(system_failure))
 
+    def test_recognizes_missing_explicit_production_file_as_retryable_generation(self):
+        state = {
+            "query": "新建 SafeCounter.cs，仅修改这一个文件。",
+            "current_agent": "finish_task",
+            "approval_status": "no_changes",
+            "proposal_source": "coder",
+            "git_status": "prepared",
+            "git_branch": "agent/owner",
+            "git_base_commit": "a" * 40,
+            "approved_changes": [],
+            "change_proposal": {"source": "coder", "patches": []},
+            "code": [{"file": "BoundedScore.cs"}],
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                "errors": [{"code": "CS0246", "message": "SafeCounter could not be found"}],
+            },
+        }
+
+        self.assertTrue(WorkflowRuntime.is_retryable_failed_repair(state))
+        self.assertEqual(
+            ["SafeCounter.cs"],
+            WorkflowRuntime._missing_explicit_production_files(state),
+        )
+
+    def test_missing_production_file_retry_returns_to_coder_approval(self):
+        state = {
+            "query": "新建 SafeCounter.cs，仅修改这一个文件。",
+            "current_agent": "finish_task",
+            "approval_status": "no_changes",
+            "proposal_source": "coder",
+            "git_status": "prepared",
+            "git_branch": "agent/owner",
+            "git_base_commit": "a" * 40,
+            "approved_changes": [],
+            "change_proposal": {"source": "coder", "patches": []},
+            "code": [{"file": "BoundedScore.cs"}],
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, MissingGenerationRetryWorkflow) as runtime:
+                runtime.invoke(state, "thread-1")
+                snapshots = list(runtime.retry_failed_repair_stream("thread-1"))
+
+        self.assertTrue(any(
+            snapshot.get("current_agent") == "coder"
+            and snapshot.get("proposed_changes", [{}])[0].get("file") == "SafeCounter.cs"
+            for snapshot in snapshots
+        ))
+        self.assertEqual("pending", snapshots[-1]["approval_status"])
+
+    def test_repair_model_failure_retries_from_saved_review(self):
+        state = {
+            **self.failed_repair_state(),
+            "repair_count": 1,
+            "code_check_result": {"success": True},
+            "compile_result": {"success": True},
+            "test_result": {"success": True},
+            "review": {
+                "pass": False,
+                "score": 78,
+                "root_causes": [{"target_file": "A.cs", "description": "saved root"}],
+            },
+            "root_causes": [{"target_file": "A.cs", "description": "saved root"}],
+            "model_error": {
+                "role": "repair",
+                "error_code": "MODEL_ROUTE_FAILED",
+                "error": "primary and fallback model routes failed",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, FailedRepairRetryWorkflow) as runtime:
+                runtime.invoke(state, "thread-1")
+                snapshots = list(runtime.retry_failed_repair_stream("thread-1"))
+
+        repair_snapshot = next(
+            snapshot for snapshot in snapshots
+            if snapshot.get("current_agent") == "repair"
+        )
+        self.assertEqual(2, repair_snapshot["repair_count"])
+        self.assertEqual({}, repair_snapshot["model_error"])
+        self.assertEqual("saved root", repair_snapshot["root_causes"][0]["description"])
+
+    def test_task_summary_reports_terminal_gate_failure_instead_of_approval(self):
+        state = {
+            **self.failed_repair_state(),
+            "query": "collision event",
+            "code_check_result": {"success": True, "errors": []},
+            "compile_result": {
+                "success": False,
+                "system_error": False,
+                "errors": [
+                    {
+                        "code": "CS8803",
+                        "message": "Top-level statements must precede type declarations.",
+                    }
+                ],
+            },
+        }
+
+        summary = WorkflowRuntime.summarize_thread(
+            "thread-1",
+            state,
+            "2026-08-13T07:30:00Z",
+            resumable=False,
+        )
+
+        self.assertEqual("failed", summary["status"])
+        self.assertEqual("unity_compiler", summary["failed_gate"])
+        self.assertIn("CS8803", summary["error"])
+        self.assertIn("Top-level statements", summary["error"])
+        self.assertEqual("no_changes", summary["approval_status"])
+
+    def test_task_summary_preserves_explicit_rejection_without_a_commit(self):
+        summary = WorkflowRuntime.summarize_thread(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "rejected",
+                "git_status": "prepared",
+            },
+        )
+
+        self.assertEqual("rejected", summary["status"])
+        self.assertEqual("", summary["failed_gate"])
+
+    def test_completed_task_summary_exposes_commit_and_quality_gates(self):
+        summary = WorkflowRuntime.summarize_thread(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "approved",
+                "repair_count": 0,
+                "code_check_result": {"success": True},
+                "compile_result": {"success": True, "system_error": False},
+                "test_result": {
+                    "success": True,
+                    "summary": {"total": 7, "passed": 7, "failed": 0},
+                },
+                "review": {"pass": True, "score": 100},
+                "git_status": "committed",
+                "git_result": {
+                    "success": True,
+                    "commit_hash": "e" * 40,
+                    "message": "feat: 提交已批准的 AI 代码变更",
+                },
+            },
+        )
+
+        self.assertEqual("e" * 40, summary["git_commit_hash"])
+        self.assertEqual("feat: 提交已批准的 AI 代码变更", summary["git_commit_message"])
+        self.assertTrue(summary["code_check_passed"])
+        self.assertTrue(summary["compile_passed"])
+        self.assertTrue(summary["test_passed"])
+        self.assertEqual(7, summary["test_total"])
+        self.assertEqual(7, summary["test_passed_count"])
+        self.assertTrue(summary["review_passed"])
+        self.assertEqual(100, summary["review_score"])
+        self.assertEqual("zero_repair_success", summary["acceptance_result"])
+
     def test_retries_failed_repair_in_the_same_thread_and_reenters_approval(self):
         state = self.failed_repair_state()
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -413,6 +671,17 @@ class WorkflowRuntimeTest(unittest.TestCase):
             self.assertIn("__interrupt__", snapshots[-1])
             self.assertEqual("thread-1", threads[0]["thread_id"])
             self.assertTrue(threads[0]["resumable"])
+
+    def test_reports_first_and_latest_checkpoint_timestamps(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, InterruptingWorkflow) as runtime:
+                runtime.invoke({"request": "timed"}, "thread-1")
+                timing = runtime.thread_timing("thread-1")
+
+            self.assertTrue(timing["started_at"])
+            self.assertTrue(timing["updated_at"])
+            self.assertLessEqual(timing["started_at"], timing["updated_at"])
 
     def test_saved_committed_thread_uses_completed_display_status(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -588,6 +857,194 @@ class WorkflowRuntimeTest(unittest.TestCase):
             )
         )
 
+    def test_test_assembly_compile_error_is_retryable_on_repair_branch(self):
+        state = {
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "test_generation_retry_count": 0,
+            "test_generation_result": {"success": True},
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                "errors": [{"file": "DragEventsTests.cs", "code": "CS0246"}],
+            },
+        }
+
+        self.assertTrue(WorkflowRuntime.is_retryable_test_generation(state))
+
+        state["test_generation_retry_count"] = 2
+        self.assertFalse(WorkflowRuntime.is_retryable_test_generation(state))
+
+    def test_legacy_missing_xml_result_with_compiler_log_is_retryable(self):
+        self.assertTrue(
+            WorkflowRuntime.is_retryable_test_generation(
+                {
+                    "current_agent": "finish_task",
+                    "approval_status": "approved",
+                    "proposal_source": "repair",
+                    "git_status": "prepared",
+                    "test_generation_result": {"success": True},
+                    "test_result": {
+                        "success": False,
+                        "system_error": True,
+                        "errors": [
+                            {
+                                "message": (
+                                    "Unity Test Runner did not create result XML "
+                                    "(exit code 1)"
+                                )
+                            }
+                        ],
+                        "raw": (
+                            "Assets\\Tests\\EditMode\\DragEventsTests.cs(12,33): "
+                            "error CS0246: GameObject could not be found"
+                        ),
+                    },
+                }
+            )
+        )
+
+    def test_test_assembly_retry_preserves_feedback_and_increments_count(self):
+        failed = {
+            "request": "approved repair",
+            "decision": "failed",
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "test_generation_retry_count": 0,
+            "test_generation_result": {"success": True},
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                "errors": [{"file": "DragEventsTests.cs", "code": "CS0246"}],
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, RetryWorkflow) as runtime:
+                runtime.invoke(failed, "thread-1")
+                snapshots = list(runtime.retry_test_generation_stream("thread-1"))
+
+        self.assertEqual("retried", snapshots[-1]["decision"])
+        self.assertEqual(1, snapshots[-1]["test_generation_retry_count"])
+        self.assertEqual("repair", snapshots[-1]["proposal_source"])
+        self.assertEqual(
+            "TEST_ASSEMBLY_COMPILE_ERROR",
+            snapshots[-1]["test_generation_feedback"]["error_code"],
+        )
+
+    def test_recovers_a_retry_previously_bypassed_by_the_repair_route(self):
+        failed = {
+            "request": "approved repair",
+            "decision": "failed",
+            "current_agent": "unity_compiler",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "test_generation_retry_count": 2,
+            "test_generation_result": {},
+            "test_generation_feedback": {
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                "errors": [{"file": "DragManagerTests.cs", "code": "CS1729"}],
+            },
+            "retry_result": {"success": True, "status": "retrying"},
+            "test_result": {},
+        }
+        self.assertTrue(WorkflowRuntime.is_retryable_test_generation(failed))
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, RetryWorkflow) as runtime:
+                runtime.invoke(failed, "thread-1")
+                snapshots = list(runtime.retry_test_generation_stream("thread-1"))
+
+        self.assertEqual("retried", snapshots[-1]["decision"])
+        self.assertEqual(2, snapshots[-1]["test_generation_retry_count"])
+        self.assertEqual("repair", snapshots[-1]["proposal_source"])
+
+    def test_recovers_after_cleanup_stopped_before_test_generator(self):
+        failed = {
+            "request": "approved repair",
+            "decision": "failed",
+            "current_agent": "finish_task",
+            "approval_status": "no_changes",
+            "proposal_source": "coder",
+            "test_generation_resume_source": "repair",
+            "git_status": "prepared",
+            "test_generation_retry_count": 2,
+            "test_generation_result": {},
+            "test_generation_feedback": {
+                "error_code": "TEST_EXECUTION_ERROR",
+                "errors": [{"test": "DragSettingsTests", "message": "Expected"}],
+            },
+            "retry_result": {"success": True, "status": "retrying"},
+            "test_result": {},
+        }
+        self.assertTrue(WorkflowRuntime.is_retryable_test_generation(failed))
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, RetryWorkflow) as runtime:
+                runtime.invoke(failed, "thread-1")
+                snapshots = list(runtime.retry_test_generation_stream("thread-1"))
+
+        self.assertEqual("retried", snapshots[-1]["decision"])
+        self.assertEqual("approved", snapshots[-1]["approval_status"])
+        self.assertEqual("repair", snapshots[-1]["proposal_source"])
+
+    def test_polluted_generation_scope_gets_one_cleanup_retry(self):
+        state = {
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "test_generation_retry_count": 2,
+            "approved_changes": [{"file": "DragEvents.cs"}],
+            "code": [
+                {"file": "DragEvents.cs"},
+                {"file": "InventoryData.cs"},
+            ],
+            "generated_tests": [
+                {"name": "DragEventsTests.cs"},
+                {"name": "InventoryDataTests.cs"},
+            ],
+            "test_generation_result": {"success": True},
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+            },
+        }
+
+        self.assertTrue(WorkflowRuntime.is_retryable_test_generation(state))
+        self.assertEqual(
+            1,
+            WorkflowRuntime._effective_test_generation_retry_count(state),
+        )
+
+    def test_production_test_contamination_routes_to_test_generation_not_repair(self):
+        state = {
+            **self.failed_repair_state(),
+            "approval_status": "no_changes",
+            "code": [
+                {"file": "DragEvents.cs", "content": "public class DragEvents {}"},
+                {
+                    "file": "DragSystemTests.cs",
+                    "content": "using NUnit.Framework; public class DragSystemTests {}",
+                },
+            ],
+            "compile_result": {"success": False, "system_error": False},
+        }
+
+        self.assertTrue(WorkflowRuntime.is_retryable_test_generation(state))
+        self.assertFalse(WorkflowRuntime.is_retryable_failed_repair(state))
+        self.assertEqual({"DragSystemTests.cs"}, WorkflowRuntime._production_test_files(state))
+
     def test_finds_pending_task_that_owns_the_current_repository_branch(self):
         state = {
             "request": "review",
@@ -625,6 +1082,60 @@ class WorkflowRuntimeTest(unittest.TestCase):
                 active = runtime.find_active_task()
 
         self.assertIsNone(active)
+
+    def test_ignores_retryable_failure_after_task_branch_head_advanced(self):
+        state = {
+            "query": "新增 SafeCounter.cs",
+            "current_agent": "finish_task",
+            "approval_status": "no_changes",
+            "proposal_source": "coder",
+            "git_status": "prepared",
+            "git_branch": "agent/owner",
+            "git_base_commit": "a" * 40,
+            "approved_changes": [],
+            "change_proposal": {"patches": []},
+            "code": [],
+            "test_result": {"success": False, "system_error": False},
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, MissingGenerationRetryWorkflow) as runtime:
+                runtime.invoke(state, "failed-thread")
+                with patch.object(
+                    runtime.workflow.git_agent.git_tool,
+                    "inspect",
+                    return_value={
+                        "success": True,
+                        "branch": "agent/owner",
+                        "head": "b" * 40,
+                        "clean": True,
+                        "changed_files": [],
+                    },
+                ):
+                    active = runtime.find_active_task()
+                    threads = runtime.list_threads()
+
+        self.assertIsNone(active)
+        self.assertFalse(threads[0]["is_active"])
+
+    def test_list_threads_marks_current_repository_owner(self):
+        state = {
+            "request": "review",
+            "current_agent": "change_proposal",
+            "approval_status": "pending",
+            "git_status": "prepared",
+            "git_branch": "agent/owner",
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = os.path.join(temporary_directory, "checkpoints.sqlite")
+            with WorkflowRuntime(database_path, InterruptingWorkflow) as runtime:
+                runtime.workflow.git_agent = OwnershipGitAgent()
+                runtime.invoke(state, "owner-thread")
+
+                thread = runtime.list_threads()[0]
+
+        self.assertTrue(thread["is_active"])
+        self.assertTrue(thread["can_abandon"])
 
     def test_dirty_baseline_thread_cannot_archive_an_active_owner_worktree(self):
         owner = {

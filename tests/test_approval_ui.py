@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from ui.approval_app import (
@@ -10,6 +11,8 @@ from ui.approval_app import (
     ApprovalController,
     build_approval_app,
     format_decision_hint,
+    format_elapsed_time,
+    format_execution_panel,
     format_git_result,
     format_module_lockup,
     format_progress_activity,
@@ -83,6 +86,12 @@ class FakeRuntime:
 
     def find_active_task(self):
         return self.active_task
+
+    def thread_timing(self, thread_id):
+        return {
+            "started_at": "2026-08-13T10:00:00+00:00",
+            "updated_at": "2026-08-13T10:02:03+00:00",
+        }
 
     def abandon_active_task(self, thread_id):
         self.abandoned_thread_id = thread_id
@@ -271,6 +280,33 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("生成背包系统", self.runtime.started_state["query"])
         self.assertEqual(["patch-a", "patch-b"], view["selected_patch_ids"])
 
+    def test_browser_refresh_restores_latest_completed_task(self):
+        tasks = [
+            {
+                "thread_id": "completed-thread",
+                "query": "新增 SafeCounter.cs",
+                "status": "completed",
+                "current_agent": "finish_task",
+                "is_active": False,
+            }
+        ]
+        self.runtime.state_values = {
+            "query": "新增 SafeCounter.cs",
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "git_status": "committed",
+            "code_check_result": {"success": True},
+            "compile_result": {"success": True},
+            "test_result": {"success": True},
+            "review": {"pass": True, "score": 100},
+        }
+
+        view = self.controller.restore_latest_view(tasks)
+
+        self.assertEqual("completed-thread", view["thread_id"])
+        self.assertEqual("completed", view["status"])
+        self.assertFalse(view["active_task_lock"])
+
     def test_start_stream_exposes_running_progress_before_approval(self):
         views = list(self.controller.start_stream("生成背包系统"))
 
@@ -387,6 +423,34 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("code_checker", views[2]["current_agent"])
         self.assertEqual("completed", views[-1]["status"])
 
+    def test_decision_stream_immediately_exposes_terminal_recovery_actions(self):
+        self.runtime.resume_stream = lambda thread_id, decision: iter(
+            [
+                {
+                    "query": "修复 A.cs",
+                    "approval_status": "approved",
+                    "proposal_source": "repair",
+                    "current_agent": "finish_task",
+                    "git_status": "prepared",
+                    "approved_changes": [{"file": "A.cs"}],
+                    "compile_result": {"success": False, "system_error": False},
+                }
+            ]
+        )
+        self.runtime.active_task = {
+            "thread_id": "thread-1",
+            "can_continue": False,
+            "can_retry_repair": True,
+            "can_retry_baseline": False,
+            "can_abandon": True,
+            "updated_at": "2026-08-14T08:00:00Z",
+        }
+
+        views = list(self.controller.accept_all_stream("thread-1", "bundle-1", ""))
+
+        self.assertTrue(views[-1]["active_task_lock"])
+        self.assertTrue(views[-1]["can_retry_repair_active"])
+
     def test_duplicate_decision_is_reported_without_error(self):
         self.runtime.resume_result = {
             "approval_status": "approved",
@@ -479,6 +543,141 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertTrue(view["can_retry_test_generation"])
         self.assertIn("重试生成测试", view["recovery_hint"])
 
+    def test_test_assembly_compile_failure_offers_same_task_retry(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "approved",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "test_generation_retry_count": 0,
+                "test_generation_result": {"success": True},
+                "test_result": {
+                    "success": False,
+                    "system_error": False,
+                    "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                },
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+        self.assertIn("重试生成测试", view["recovery_hint"])
+
+    def test_legacy_missing_xml_failure_with_compiler_log_offers_retry(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "approved",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "test_generation_result": {"success": True},
+                "test_result": {
+                    "success": False,
+                    "system_error": True,
+                    "raw": (
+                        "Assets\\Tests\\EditMode\\DragEventsTests.cs(12,33): "
+                        "error CS0246: GameObject could not be found"
+                    ),
+                },
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+
+    def test_bypassed_repair_retry_still_offers_compensating_retry(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "unity_compiler",
+                "approval_status": "approved",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "test_generation_retry_count": 2,
+                "test_generation_result": {},
+                "test_generation_feedback": {
+                    "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                },
+                "retry_result": {"success": True, "status": "retrying"},
+                "test_result": {},
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+
+    def test_cleanup_interruption_with_no_changes_still_offers_retry(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "no_changes",
+                "proposal_source": "coder",
+                "test_generation_resume_source": "repair",
+                "git_status": "prepared",
+                "test_generation_retry_count": 2,
+                "test_generation_result": {},
+                "test_generation_feedback": {
+                    "error_code": "TEST_EXECUTION_ERROR",
+                },
+                "retry_result": {"success": True, "status": "retrying"},
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+
+    def test_polluted_generation_scope_offers_cleanup_retry(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "approved",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "test_generation_retry_count": 2,
+                "approved_changes": [{"file": "DragEvents.cs"}],
+                "code": [
+                    {"file": "DragEvents.cs"},
+                    {"file": "InventoryData.cs"},
+                ],
+                "generated_tests": [
+                    {"name": "DragEventsTests.cs"},
+                    {"name": "InventoryDataTests.cs"},
+                ],
+                "test_generation_result": {"success": True},
+                "test_result": {
+                    "success": False,
+                    "system_error": False,
+                    "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+                },
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+
+    def test_production_test_contamination_prefers_test_retry_over_repair(self):
+        view = self.controller._view_from_result(
+            "thread-1",
+            {
+                "current_agent": "finish_task",
+                "approval_status": "no_changes",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "approved_changes": [{"file": "DragSystemTests.cs"}],
+                "code": [{
+                    "file": "DragSystemTests.cs",
+                    "content": "using NUnit.Framework; public class DragSystemTests {}",
+                }],
+                "compile_result": {"success": False, "system_error": False},
+                "review": {
+                    "root_causes": [{"target_file": "DragSystemTests.cs"}],
+                },
+            },
+        )
+
+        self.assertTrue(view["can_retry_test_generation"])
+        self.assertFalse(view["can_retry_failed_repair"])
+
     def test_retry_test_generation_stream_preserves_the_same_thread(self):
         self.runtime.state_values = {
             "current_agent": "finish_task",
@@ -528,7 +727,7 @@ class ApprovalControllerTest(unittest.TestCase):
         )
 
         self.assertTrue(view["can_retry_failed_repair"])
-        self.assertIn("重新修复当前任务", view["recovery_hint"])
+        self.assertIn("重试当前任务", view["recovery_hint"])
 
     def test_retry_failed_repair_stream_preserves_thread_and_returns_to_approval(self):
         self.runtime.state_values = {
@@ -576,6 +775,51 @@ class ApprovalControllerTest(unittest.TestCase):
 
         self.assertTrue(components["retry-failed-repair"]["visible"])
         self.assertTrue(components["abandon-active-task"]["visible"])
+
+    def test_active_test_generation_retry_is_visible_in_active_task_actions(self):
+        self.runtime.state_values = {
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "test_generation_result": {"success": True},
+            "test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
+            },
+        }
+        self.runtime.active_task = {
+            "thread_id": "thread-1",
+            "can_continue": True,
+            "can_retry_repair": False,
+            "can_retry_baseline": False,
+            "can_abandon": True,
+        }
+
+        view = self.controller.active_task_view()
+        config = build_approval_app(self.controller, view).get_config_file()
+        by_elem_id = {
+            component.get("props", {}).get("elem_id"): component
+            for component in config["components"]
+        }
+        retry_component = by_elem_id["retry-test-generation"]
+        active_group = by_elem_id["active-task-lock"]
+
+        def parent_id(node, target_id):
+            for child in node.get("children", []):
+                if child.get("id") == target_id:
+                    return node.get("id")
+                found = parent_id(child, target_id)
+                if found is not None:
+                    return found
+            return None
+
+        self.assertTrue(retry_component["props"]["visible"])
+        self.assertEqual(
+            active_group["id"],
+            parent_id(config["layout"], retry_component["id"]),
+        )
 
     def test_baseline_system_failure_offers_same_task_retry(self):
         self.runtime.state_values = {
@@ -713,6 +957,25 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("invalid approval bundle", view_state["error_summary"])
         self.assertNotIn("approve_all", view_state["available_actions"])
 
+    def test_repair_model_failure_is_not_misreported_as_review_failure(self):
+        view_state = map_agent_state(
+            {
+                "current_agent": "finish_task",
+                "approval_status": "no_changes",
+                "proposal_source": "repair",
+                "git_status": "prepared",
+                "review": {"pass": False, "score": 78},
+                "model_error": {
+                    "role": "repair",
+                    "error_code": "MODEL_ROUTE_FAILED",
+                    "error": "primary and fallback model routes failed",
+                },
+            }
+        )
+
+        self.assertEqual("repair", view_state["failed_gate"])
+        self.assertIn("primary and fallback", view_state["error_summary"])
+
     def test_failed_view_exposes_context_and_requires_a_new_task(self):
         view = self.controller._view_from_result(
             "thread-1",
@@ -744,6 +1007,30 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("2 rounds", view["repair_summary"])
         self.assertFalse(view["resumable"])
         self.assertIn("发起新任务", view["recovery_hint"])
+
+    def test_execution_panel_shows_start_time_and_fixed_terminal_duration(self):
+        view = self.controller._with_active_task(
+            self.controller._view_from_result(
+                "thread-1",
+                {"current_agent": "finish_task", "git_status": "committed"},
+            )
+        )
+
+        rendered = format_execution_panel(view)
+
+        self.assertIn("开始时间", rendered)
+        self.assertIn("2026-08-13 18:00", rendered)
+        self.assertIn("执行耗时", rendered)
+        self.assertIn("2分 3秒", rendered)
+        self.assertIn('data-execution-ended-at="2026-08-13T10:02:03+00:00"', rendered)
+
+    def test_elapsed_time_formats_running_duration(self):
+        elapsed = format_elapsed_time(
+            "2026-08-13T10:00:00Z",
+            now=datetime(2026, 8, 13, 11, 2, 3, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual("1小时 2分 3秒", elapsed)
 
     def test_pending_view_state_exposes_only_approval_actions(self):
         view_state = map_agent_state({"approval_status": "pending"})
@@ -966,6 +1253,32 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertEqual("进入审批", task_center_action_label("pending"))
         self.assertEqual("查看结果", task_center_action_label("completed"))
 
+    def test_task_center_terminal_failure_never_looks_approved_or_error_free(self):
+        tasks = [{
+            "thread_id": "failed-repair",
+            "query": "collision event",
+            "status": "failed",
+            "approval_status": "approved",
+            "current_agent": "finish_task",
+            "failed_gate": "unity_compiler",
+            "error": "CS8803: Top-level statements must precede type declarations.",
+            "git_status": "prepared",
+            "repair_count": 3,
+            "is_active": True,
+        }]
+
+        cards = format_task_center_cards(tasks)
+        detail = format_task_center_detail("failed-repair", tasks)
+
+        self.assertIn("执行失败", cards)
+        self.assertIn("CS8803", cards)
+        self.assertNotIn("暂无错误", cards)
+        self.assertIn("执行失败", detail)
+        self.assertIn("CS8803", detail)
+        self.assertIn("失败门禁", detail)
+        self.assertIn("编译项目", detail)
+        self.assertNotIn("暂无错误记录", detail)
+
     def test_task_detail_shows_read_only_model_route_summary(self):
         tasks = [{
             "thread_id": "model-task",
@@ -996,6 +1309,36 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("已回退", detail)
         self.assertIn("3 次", detail)
         self.assertNotIn("API Key", detail)
+
+    def test_completed_task_detail_shows_commit_quality_gates_and_acceptance(self):
+        tasks = [{
+            "thread_id": "completed-task",
+            "query": "ScoreValue",
+            "status": "completed",
+            "current_agent": "finish_task",
+            "repair_count": 0,
+            "code_check_passed": True,
+            "compile_passed": True,
+            "test_passed": True,
+            "test_total": 7,
+            "test_passed_count": 7,
+            "review_passed": True,
+            "review_score": 100,
+            "git_status": "committed",
+            "git_commit_hash": "e" * 40,
+            "acceptance_result": "zero_repair_success",
+        }]
+
+        detail = format_task_center_detail("completed-task", tasks)
+
+        self.assertIn("质量门禁", detail)
+        self.assertIn("Code Checker", detail)
+        self.assertIn("Unity 编译", detail)
+        self.assertIn("7 / 7", detail)
+        self.assertIn("Reviewer", detail)
+        self.assertIn("100 分", detail)
+        self.assertIn("零修复成功", detail)
+        self.assertIn(("e" * 40), detail)
 
     def test_controller_batch_delete_delegates_all_selected_threads(self):
         result = self.controller.delete_saved_tasks(["thread-1", "thread-2"])
@@ -1045,6 +1388,48 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("#primary-navigation button.primary", APPROVAL_CSS)
         self.assertIn("#task-selection-summary", APPROVAL_CSS)
         self.assertIn("background: transparent !important", APPROVAL_CSS)
+
+    def test_task_detail_drawer_has_one_reachable_vertical_scroll_container(self):
+        drawer_css = APPROVAL_CSS.split(
+            "#task-detail-drawer,", 1
+        )[1].split("}", 1)[0]
+        drawer_form_css = APPROVAL_CSS.split(
+            "#task-detail-drawer.form {", 1
+        )[1].split("}", 1)[0]
+        detail_content_css = APPROVAL_CSS.split(
+            "#task-detail-content {", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("overflow: hidden !important", drawer_css)
+        self.assertIn("overflow-x: hidden !important", drawer_css)
+        self.assertIn("bottom: 0", drawer_css)
+        self.assertIn("height: auto !important", drawer_css)
+        self.assertIn("box-sizing: border-box !important", drawer_css)
+        self.assertIn("display: flex !important", drawer_form_css)
+        self.assertIn("flex: 1 1 auto !important", drawer_form_css)
+        self.assertIn("min-height: 0 !important", drawer_form_css)
+        self.assertIn("overflow: hidden !important", drawer_form_css)
+        self.assertIn("flex: 1 1 auto !important", detail_content_css)
+        self.assertIn("min-height: 0 !important", detail_content_css)
+        self.assertIn("max-height: calc(100vh - 286px) !important", detail_content_css)
+        self.assertIn("overflow-y: scroll !important", detail_content_css)
+        self.assertIn("overscroll-behavior: contain", detail_content_css)
+        self.assertIn("scrollbar-gutter: stable", detail_content_css)
+        self.assertIn("* {\n    scrollbar-width: thin", APPROVAL_CSS)
+        self.assertIn("scrollbar-color: #52758f #0d1c2d", APPROVAL_CSS)
+        self.assertIn("*::-webkit-scrollbar {", APPROVAL_CSS)
+        self.assertIn("*::-webkit-scrollbar-thumb {", APPROVAL_CSS)
+        self.assertIn("*::-webkit-scrollbar-thumb:hover {", APPROVAL_CSS)
+        self.assertIn("*::-webkit-scrollbar-corner {", APPROVAL_CSS)
+
+        config = build_approval_app(self.controller).get_config_file()
+        component_ids = {
+            component.get("props", {}).get("elem_id") for component in config["components"]
+        }
+        self.assertIn("task-detail-open", component_ids)
+        self.assertIn("task-detail-delete", component_ids)
+        self.assertIn("task-detail-close", component_ids)
+        self.assertIn("task-detail-actions", component_ids)
 
     def test_task_center_pagination_limits_each_page_to_ten(self):
         tasks = [{"thread_id": f"task-{index}"} for index in range(23)]

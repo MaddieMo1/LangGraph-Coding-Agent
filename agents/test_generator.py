@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 from prompts.test_generator_prompt import get_test_generator_prompt
@@ -15,12 +16,14 @@ class TestGeneratorAgent:
         self.test_generation_tool = test_generation_tool
 
     def run(self, state):
+        scoped_code = self._approved_code(state)
         prompt = get_test_generator_prompt(
             state.get("query", ""),
-            state.get("code", []),
+            scoped_code,
             state.get("architecture", ""),
             state.get("project_context", {}),
             state.get("dependency_graph", {}),
+            state.get("test_generation_feedback", {}),
         )
         tests = []
         parse_errors = []
@@ -69,13 +72,39 @@ class TestGeneratorAgent:
 
         return {
             "current_agent": "test_generator",
+            "proposal_source": (
+                state.get("test_generation_resume_source")
+                or state.get("proposal_source", "")
+            ),
+            "test_generation_resume_source": "",
             "generated_tests": tests if tool_result["success"] else [],
             "test_generation_result": tool_result,
             "retry_result": {"success": tool_result["success"], "status": "completed"},
+            "test_generation_feedback": (
+                {} if tool_result["success"] else state.get("test_generation_feedback", {})
+            ),
             "agent_history": state.get("agent_history", [])
             + ["Test Generator完成" if tool_result["success"] else "Test Generator失败"],
             **model_state_update(state, model_records),
         }
+
+    @staticmethod
+    def _approved_code(state):
+        code = state.get("code", []) or []
+        approved_files = {
+            os.path.basename(str(change.get("file", "")).replace("\\", "/"))
+            for change in (state.get("approved_changes", []) or [])
+            if change.get("file")
+        }
+        if not approved_files:
+            return code
+        scoped = [
+            item
+            for item in code
+            if os.path.basename(str(item.get("file", "")).replace("\\", "/"))
+            in approved_files
+        ]
+        return scoped or code
 
     @staticmethod
     def _retry_prompt(original_prompt, errors, attempt):

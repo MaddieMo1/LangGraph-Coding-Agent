@@ -341,14 +341,18 @@ class RepairAgent:
         )
 
 
+        def validate_repair_content(content):
+            validation = self.repair_tool.apply_llm_result(content, target_file)
+            return (
+                validation.get("success", False),
+                validation.get("error", "") or "repair code response required",
+            )
+
         invocation = invoke_model(
             self.llm,
             prompt,
             getattr(self, "_routing_state", None) or {},
-            lambda content: (
-                self.repair_tool.apply_llm_result(content, target_file).get("success", False),
-                "repair code response required",
-            ),
+            validate_repair_content,
         )
         content = invocation.content
 

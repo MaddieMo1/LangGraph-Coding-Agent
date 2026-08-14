@@ -78,6 +78,14 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Provider、模型、复杂度、选择原因、调用次数、耗时和可用 token usage 会持久化，UI 只读展示，不提供逐任务手动选模。
 - 不增加 Agent，不改变人工审批、Unity 验证或本地 Git 安全边界。
 
+## 🧪 Day14：Agent Evaluation（离线基准已实现）
+
+- 固定离线基准覆盖首次成功、修复成功、修复耗尽、模型失败和 Unity 环境阻塞，每个案例包含三次确定性运行记录。
+- 报告编译成功率、修复成功率、端到端成功率、Token 消耗、循环次数、功能稳定性、路由漂移与失败分类，不生成掩盖质量门失败的综合分数。
+- 真实 Provider + Unity 验收记录与离线分数严格分离；零修复场景已通过，Repair 场景的现有真实运行在 3 轮后失败，Day14 完整验收仍需一条 Repair 后成功的链路。
+- 运行 `python -m evaluation.runner` 可生成 `evaluation/results/day14_evaluation.json` 和仓库根目录的 `evaluation_report.md`。
+- `day14/Day14.ipynb` 可在无 LLM、无 Unity、无网络环境下复现核心指标和报告确定性。
+
 ### Day06-4 编译修复闭环
 
 - 在独立测试工程中执行真实 Unity BatchMode 编译。

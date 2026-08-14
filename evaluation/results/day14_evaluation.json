@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "suite": "day14-core",
+  "metrics": {
+    "end_to_end_success": {
+      "numerator": 2,
+      "denominator": 4,
+      "percent": 50.0
+    },
+    "compile_success": {
+      "numerator": 2,
+      "denominator": 3,
+      "percent": 66.66666666666667
+    },
+    "repair_success": {
+      "numerator": 1,
+      "denominator": 2,
+      "percent": 50.0
+    },
+    "functional_stability": {
+      "numerator": 5,
+      "denominator": 5,
+      "percent": 100.0
+    },
+    "zero_repair_first_pass": {
+      "numerator": 1,
+      "denominator": 4,
+      "percent": 25.0
+    },
+    "token_coverage": {
+      "numerator": 8,
+      "denominator": 15,
+      "percent": 53.333333333333336
+    }
+  },
+  "tokens": {
+    "known_input": 1815,
+    "known_output": 815,
+    "median_total": 317.5,
+    "maximum_total": 595
+  },
+  "loops": {
+    "repair_mean": 1.0,
+    "repair_median": 0.5,
+    "repair_maximum": 3
+  },
+  "failures": {
+    "success": 2,
+    "code_failure": 1,
+    "model_failure": 1,
+    "approval_rejected": 0,
+    "environment_blocked": 1,
+    "incomplete": 0
+  },
+  "cases": [
+    {
+      "case_id": "first-pass-success",
+      "category": "first_pass",
+      "complexity": "simple",
+      "outcome": "success",
+      "gates": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "repair_count": 0,
+      "functionally_stable": true,
+      "route_drift": true,
+      "token_dispersion": 20
+    },
+    {
+      "case_id": "model-route-failure",
+      "category": "model_failure",
+      "complexity": "standard",
+      "outcome": "model_failure",
+      "gates": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "repair_count": 0,
+      "functionally_stable": true,
+      "route_drift": true,
+      "token_dispersion": null
+    },
+    {
+      "case_id": "repair-exhausted",
+      "category": "terminal_failure",
+      "complexity": "complex",
+      "outcome": "code_failure",
+      "gates": [
+        true,
+        false,
+        false,
+        false
+      ],
+      "repair_count": 3,
+      "functionally_stable": true,
+      "route_drift": false,
+      "token_dispersion": 15
+    },
+    {
+      "case_id": "repair-once-success",
+      "category": "repair",
+      "complexity": "standard",
+      "outcome": "success",
+      "gates": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "repair_count": 1,
+      "functionally_stable": true,
+      "route_drift": false,
+      "token_dispersion": 30
+    },
+    {
+      "case_id": "unity-system-blocked",
+      "category": "environment_blocked",
+      "complexity": "standard",
+      "outcome": "environment_blocked",
+      "gates": [
+        null,
+        false,
+        null,
+        null
+      ],
+      "repair_count": 0,
+      "functionally_stable": true,
+      "route_drift": false,
+      "token_dispersion": null
+    }
+  ],
+  "data_quality": [
+    "model-route-failure: token usage is incomplete",
+    "repair-exhausted: token usage is incomplete",
+    "unity-system-blocked: token usage is incomplete"
+  ],
+  "real_acceptance": [
+    {
+      "acceptance_id": "day14-real-first-pass",
+      "scenario": "first_pass",
+      "status": "passed",
+      "gates": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "repair_count": 0,
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "input_tokens": 838956,
+      "output_tokens": 13999,
+      "commit": "e5ecd3796057e1751feb4bf681cff10301737668",
+      "blocker_code": null
+    },
+    {
+      "acceptance_id": "day14-real-repair",
+      "scenario": "repair_success",
+      "status": "failed",
+      "gates": [
+        true,
+        false,
+        true,
+        false
+      ],
+      "repair_count": 3,
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "input_tokens": 2031668,
+      "output_tokens": 104908,
+      "commit": null,
+      "blocker_code": "REPAIR_EXHAUSTED"
+    }
+  ]
+}
