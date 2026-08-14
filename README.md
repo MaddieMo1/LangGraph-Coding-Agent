@@ -70,14 +70,6 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - 只有通过后续编译或测试验证的 Repair 才会成为可复用方案；系统与环境错误不会污染缺陷记忆。
 - Reviewer 与 Repair 会优先参考同错误码的历史成功方案，但当前 Compiler、NUnit 和 Root Cause 证据始终优先。
 
-## ✅ Day13：Multi-Model Router
-
-- Architecture、File Planner、Coder、Test Generator、Reviewer 和 Repair 不再共享单一模型，按角色与确定性复杂度规则选择模型。
-- 快速档使用 `deepseek-v4-flash`；复杂架构、长上下文规划、代码生成、独立 Review 和 Repair 使用各自的专业模型。
-- 主模型发生可恢复错误时最多切换一次其他 Provider；输出格式错误先由当前模型纠正一次，再触发回退。
-- Provider、模型、复杂度、选择原因、调用次数、耗时和可用 token usage 会持久化，UI 只读展示，不提供逐任务手动选模。
-- 不增加 Agent，不改变人工审批、Unity 验证或本地 Git 安全边界。
-
 ## ✅ Day14：Agent Evaluation
 
 - 固定离线基准覆盖首次成功、修复成功、修复耗尽、模型失败和 Unity 环境阻塞，每个案例包含三次确定性运行记录。
@@ -87,6 +79,14 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Repair 真实链路最终通过 Code Checker、Unity 编译、14/14 EditMode 测试和 Reviewer 100 分，提交为 `84108ed28b432acaff42d3c94e30629fd257bd5f`。
 - 运行 `python -m evaluation.runner` 可生成 `evaluation/results/day14_evaluation.json` 和仓库根目录的 `evaluation_report.md`。
 - `day14/Day14.ipynb` 可在无 LLM、无 Unity、无网络环境下复现核心指标和报告确定性。
+
+## ✅ Day13：Multi-Model Router
+
+- Architecture、File Planner、Coder、Test Generator、Reviewer 和 Repair 不再共享单一模型，按角色与确定性复杂度规则选择模型。
+- 快速档使用 `deepseek-v4-flash`；复杂架构、长上下文规划、代码生成、独立 Review 和 Repair 使用各自的专业模型。
+- 主模型发生可恢复错误时最多切换一次其他 Provider；输出格式错误先由当前模型纠正一次，再触发回退。
+- Provider、模型、复杂度、选择原因、调用次数、耗时和可用 token usage 会持久化，UI 只读展示，不提供逐任务手动选模。
+- 不增加 Agent，不改变人工审批、Unity 验证或本地 Git 安全边界。
 
 ### Day06-4 编译修复闭环
 
