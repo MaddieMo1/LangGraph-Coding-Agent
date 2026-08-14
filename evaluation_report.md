@@ -60,4 +60,4 @@ Real acceptance is reported separately and never changes offline metrics.
 | Scenario | Status | Repair | Commit |
 |---|---|---:|---|
 | first_pass | passed | 0 | e5ecd3796057e1751feb4bf681cff10301737668 |
-| repair_success | failed | 3 | None |
+| repair_success | passed | 1 | 84108ed28b432acaff42d3c94e30629fd257bd5f |
