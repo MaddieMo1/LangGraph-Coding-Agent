@@ -25,6 +25,7 @@ from workflow.router import router
 from workflow.review_router import review_router
 from workflow.task import finish_task
 from workflow.project_understanding import ProjectUnderstandingNode
+from workflow.unity_knowledge import UnityKnowledgeNode
 
 from llm.invocation import RoleModel
 from llm.model_router import ModelRouteError, ModelRouter
@@ -34,6 +35,7 @@ from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
 from memory.dependency_graph import DependencyGraphStore
 from memory.long_term import LongTermMemoryStore
+from memory.unity_knowledge import UnityKnowledgeStore
 from tools.approval_tool import ApprovalTool
 from tools.change_proposal_tool import ChangeProposalTool
 from tools.diff_tool import DiffTool
@@ -42,6 +44,8 @@ from tools.file_manager import FileManager
 from tools.git_tool import GitTool
 from tools.project_scanner import UnityProjectScanner
 from tools.repair_tool import RepairTool
+from tools.unity_knowledge_tool import UnityKnowledgeTool
+from tools.unity_docs_provider import UnityDocumentationProvider
 from tools.test_generation_tool import TestGenerationTool
 from workflow.human_approval import ChangeProposalNode, HumanApprovalNode
 from workflow.long_term_memory import LongTermMemoryNode
@@ -128,6 +132,22 @@ class AgentWorkflow:
                     "DEPENDENCY_GRAPH_PATH",
                     os.path.join(day06_path, "memory", "dependency_graph.json"),
                 )
+            ),
+        )
+
+        self.unity_knowledge = UnityKnowledgeNode(
+            UnityKnowledgeTool(
+                UnityKnowledgeStore(
+                    os.getenv(
+                        "UNITY_KNOWLEDGE_CACHE_PATH",
+                        os.path.join(day06_path, "memory", "unity_knowledge_cache.json"),
+                    )
+                ),
+                provider=UnityDocumentationProvider(),
+            ),
+            network_enabled=(
+                os.getenv("UNITY_KNOWLEDGE_NETWORK_ENABLED", "").strip().lower()
+                in {"1", "true", "yes"}
             ),
         )
 
@@ -295,6 +315,10 @@ class AgentWorkflow:
         return {**result, **self.long_term_memory.observe_compile(result)}
 
 
+    def unity_knowledge_node(self, state):
+        return self.unity_knowledge.run(state)
+
+
     def unity_test_node(self, state):
         result = unity_test_agent(state)
         merged_state = {**state, **result}
@@ -307,7 +331,7 @@ class AgentWorkflow:
             or state.get("dependency_graph_status") != "success"
         ):
             return "finish_task"
-        return router(state)
+        return "unity_knowledge"
 
 
     def architecture_validator_node(self,state):
@@ -513,6 +537,11 @@ class AgentWorkflow:
         )
 
         self.workflow.add_node(
+            "unity_knowledge",
+            self.unity_knowledge_node
+        )
+
+        self.workflow.add_node(
             "architecture",
             self.architecture_node
         )
@@ -635,9 +664,14 @@ class AgentWorkflow:
             "project_understanding",
             self.project_understanding_router,
             {
-                "architecture":"architecture",
+                "unity_knowledge":"unity_knowledge",
                 "finish_task":"finish_task"
             }
+        )
+
+        self.workflow.add_edge(
+            "unity_knowledge",
+            "architecture"
         )
 
 

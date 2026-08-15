@@ -337,7 +337,8 @@ class RepairAgent:
             context,
             issues,
             strategy,
-            memory_context
+            memory_context,
+            (getattr(self, "_routing_state", None) or {}).get("unity_knowledge", {}),
         )
 
 

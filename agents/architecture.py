@@ -48,6 +48,7 @@ class ArchitectureAgent:
             state.get("project_context", {}),
             state.get("dependency_graph", {}),
             state.get("requirement_contract", {}),
+            state.get("unity_knowledge", {}),
         )
 
         invocation = invoke_model(self.llm, prompt, state)

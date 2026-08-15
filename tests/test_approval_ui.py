@@ -1673,6 +1673,12 @@ class ApprovalControllerTest(unittest.TestCase):
             "strategies": [],
         }))
 
+    def test_unity_knowledge_card_keeps_the_dark_surface(self):
+        self.assertIn('#unity-knowledge-card .styler', APPROVAL_CSS)
+        self.assertIn('#unity-knowledge-info .html-container', APPROVAL_CSS)
+        self.assertIn('#unity-knowledge-info .prose', APPROVAL_CSS)
+        self.assertIn('background-color: transparent !important', APPROVAL_CSS)
+
     def test_repair_context_disables_gradio_default_prose_surface(self):
         pending_view = self.controller.reload("thread-1")
         pending_view["source"] = "repair"

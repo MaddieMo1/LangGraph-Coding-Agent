@@ -56,6 +56,9 @@ class AgentState(TypedDict):
     memory_context: Dict[str, Any]
     memory_status: str
     memory_error: str
+    unity_knowledge: Dict[str, Any]
+    unity_knowledge_status: str
+    unity_knowledge_error: str
 
 
     # =========================
