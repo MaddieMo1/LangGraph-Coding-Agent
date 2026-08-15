@@ -129,6 +129,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 | 智能体 | 职责 |
 |---|---|
 | Coordinator | 理解用户需求并准备工作流 |
+| Unity Knowledge | 缓存优先检索版本匹配的 Unity 官方文档证据 |
 | Architecture | 设计目标系统架构 |
 | Architecture Validator | 验证架构输出 |
 | File Planner | 规划需要生成的源文件 |
@@ -148,7 +149,8 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 flowchart TD
     A[用户需求] --> B[需求协调]
     B --> P[工程理解与依赖图]
-    P --> C[架构设计]
+    P --> K[Unity API 知识检索]
+    K --> C[架构设计]
     C --> D[架构验证]
     D --> E[文件规划]
     E --> F[代码生成]
@@ -308,6 +310,21 @@ Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSett
 测试生成阶段的模型 JSON 解析错误属于可恢复失败：系统先自动重试，重试耗尽后保留 SQLite 检查点、批准证据和任务分支。手动恢复前会重新验证当前分支、基准提交、脏文件集合和批准内容哈希；检测到任何漂移都会拒绝继续。
 
 `GENERATED_TEST_SOURCE_PATH` 和 `WORKFLOW_CHECKPOINT_PATH` 可选，用于将生成测试与 SQLite 检查点隔离到指定运行目录；未配置时继续使用项目内默认路径。`PROJECT_CONTEXT_PATH`、`DEPENDENCY_GRAPH_PATH`、`PATCH_HISTORY_PATH`、`APPROVAL_HISTORY_PATH` 和 `LONG_TERM_MEMORY_PATH` 也支持相同的可选隔离方式。
+
+### Unity API 知识检索（Day16）
+
+知识检索默认离线，并优先读取版本化 JSON 缓存；它不是需要用户维护的本地文档文件夹。**不需要手工下载或放置 Unity 文档**。缓存默认写入 `memory/unity_knowledge_cache.json`，可通过 `UNITY_KNOWLEDGE_CACHE_PATH` 指向独立运行时目录。
+
+如需启用受控联网检索，可显式配置：
+
+```env
+UNITY_KNOWLEDGE_NETWORK_ENABLED=true
+UNITY_KNOWLEDGE_CACHE_PATH=D:\path\to\runtime-state\unity_knowledge_cache.json
+```
+
+联网 Provider 无需额外 API Key，只访问 `docs.unity3d.com` 和 `docs.unity.cn`。它检索需求中明确出现的 Scripting API 名称（如 `Object.Destroy`）、官方文档 URL，以及需求中点名的已安装 Unity Package。自然语言中没有可定位 API 或 Package 时会安全返回无可信证据，不会退回任意网页搜索。
+
+远程页面经过 HTTPS 域名、重定向、内容长度、提示词注入和版本校验；Agent 最多接收 3 条、每条 600 字符的只读摘要。完整远程正文不会展示在审批 UI，也不能扩大结构化需求契约。离线 CI 不设置联网开关，因此不会访问网络。
 
 启动前可执行只读环境预检：
 

@@ -743,6 +743,7 @@ body {
 #file-panel,
 #diff-panel,
 #proposal-card,
+#unity-knowledge-card,
 #git-card,
 #note-card {
     min-width: 0;
@@ -754,6 +755,7 @@ body {
 }
 
 #proposal-card .styler,
+#unity-knowledge-card .styler,
 #git-card .styler,
 #note-card .styler {
     background: #0b1626 !important;
@@ -925,6 +927,7 @@ body {
 }
 
 #proposal-card,
+#unity-knowledge-card,
 #repair-context-card,
 #git-card,
 #note-card {
@@ -932,6 +935,7 @@ body {
 }
 
 #repair-context-card,
+#unity-knowledge-card,
 #git-card,
 #note-card {
     flex: 1 1 auto;
@@ -957,6 +961,25 @@ body {
 #repair-context-info .prose,
 #repair-context-info .prose > div,
 #repair-context-info .repair-review-card {
+    border: 0 !important;
+    color: var(--deck-text) !important;
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+#unity-knowledge-info {
+    border: 0 !important;
+    color: var(--deck-text) !important;
+    background: transparent !important;
+    --block-background-fill: transparent;
+    --body-background-fill: transparent;
+    --background-fill-primary: transparent;
+}
+
+#unity-knowledge-info > div,
+#unity-knowledge-info .html-container,
+#unity-knowledge-info .prose,
+#unity-knowledge-info .prose > div {
     border: 0 !important;
     color: var(--deck-text) !important;
     background: transparent !important;
@@ -1046,6 +1069,14 @@ body {
 .change-create { color: var(--deck-green); }
 .change-modify { color: var(--deck-cyan); }
 .change-delete { color: var(--deck-red); }
+
+.knowledge-source-list { display: grid; gap: 10px; margin-top: 14px; }
+.knowledge-source {
+    padding-top: 10px;
+    border-top: 1px solid var(--deck-line-soft);
+}
+.knowledge-source a { color: var(--deck-cyan); font-size: 12px; text-decoration: none; }
+.knowledge-source-meta { margin-top: 4px; color: #71849d; font-size: 10px; }
 
 #approval-note {
     margin-top: 14px;
@@ -2230,6 +2261,7 @@ OPERATION_LABELS = {"create": "新增", "modify": "修改", "delete": "删除"}
 AGENT_LABELS = {
     "coordinator": "任务编排",
     "project_understanding": "理解项目",
+    "unity_knowledge": "检索 Unity 文档",
     "architecture": "设计架构",
     "architecture_validator": "验证架构",
     "file_planner": "规划文件",
@@ -2845,6 +2877,39 @@ def format_proposal_info(source, thread_id, patches):
         f'<span class="change-modify">~ {counts["modify"]} 修改</span>'
         f'<span class="change-delete">− {counts["delete"]} 删除</span>'
         "</div></div></div>"
+    )
+
+
+def format_unity_knowledge(result):
+    result = result if isinstance(result, dict) else {}
+    status = str(result.get("status", "not_run") or "not_run")
+    requested_version = str(result.get("unity_version", "") or "—")
+    evidence = result.get("evidence", [])
+    evidence = evidence if isinstance(evidence, list) else []
+    rows = []
+    for item in evidence[:3]:
+        if not isinstance(item, dict):
+            continue
+        title = escape(str(item.get("title", "Unity documentation") or "Unity documentation"))
+        url = str(item.get("url", "") or "")
+        source_version = escape(str(item.get("source_unity_version", "") or "未知版本"))
+        version_status = escape(str(item.get("version_status", "unknown") or "unknown"))
+        if not url.startswith(("https://docs.unity3d.com/", "https://docs.unity.cn/")):
+            continue
+        rows.append(
+            '<div class="knowledge-source">'
+            f'<a href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">{title}</a>'
+            f'<div class="knowledge-source-meta">来源版本 {source_version} · {version_status}</div>'
+            '</div>'
+        )
+    sources = "".join(rows) or '<div class="knowledge-source-meta">暂无可信官方来源</div>'
+    return (
+        '<div class="inspector-title">UNITY KNOWLEDGE · 只读</div>'
+        '<div class="proposal-grid">'
+        f'<div><div class="proposal-label">检索状态</div><div class="proposal-value is-code">{escape(status)}</div></div>'
+        f'<div><div class="proposal-label">工程版本</div><div class="proposal-value is-code">{escape(requested_version)}</div></div>'
+        '</div><div class="knowledge-source-list">'
+        f'{sources}</div>'
     )
 
 
@@ -3535,6 +3600,7 @@ class ApprovalController:
             "agent_history": result.get("agent_history", []),
             "model_route": dict(result.get("model_route", {}) or {}),
             "model_usage": dict(result.get("model_usage", {}) or {}),
+            "unity_knowledge": dict(result.get("unity_knowledge", {}) or {}),
             "git_status": git_status,
             "git_branch": result.get("git_branch", git_result.get("branch", "")),
             "git_base_commit": result.get(
@@ -3799,6 +3865,7 @@ def build_approval_app(controller, initial_view=None):
         "can_retry_repair_active": False,
         "can_retry_baseline_active": False,
         "can_abandon_active": False,
+        "unity_knowledge": {},
     }
     initial_choices = patch_choices(initial_view["patches"])
     initial_patch = (
@@ -4020,9 +4087,22 @@ def build_approval_app(controller, initial_view=None):
 
             with gr.Column(
                 scale=3,
-                visible=initial_layout["show_review"] or initial_layout["show_git"],
+                visible=(
+                    initial_layout["show_review"]
+                    or initial_layout["show_git"]
+                    or bool(initial_view.get("unity_knowledge"))
+                ),
                 elem_id="right-inspector",
             ) as right_inspector:
+                with gr.Group(
+                    visible=bool(initial_view.get("unity_knowledge")),
+                    elem_id="unity-knowledge-card",
+                ) as unity_knowledge_card:
+                    unity_knowledge_info = gr.HTML(
+                        format_unity_knowledge(initial_view.get("unity_knowledge", {})),
+                        elem_id="unity-knowledge-info",
+                        apply_default_css=False,
+                    )
                 with gr.Group(visible=initial_layout["show_review"], elem_id="proposal-card") as proposal_card:
                     proposal_info = gr.HTML(
                         format_proposal_info(
@@ -4254,6 +4334,8 @@ def build_approval_app(controller, initial_view=None):
                     len(view["patches"]),
                     view.get("repair_context", {}),
                 ),
+                format_unity_knowledge(view.get("unity_knowledge", {})),
+                gr.update(visible=bool(view.get("unity_knowledge"))),
                 format_proposal_info(view["source"], view["thread_id"], view["patches"]),
                 format_repair_context(view.get("repair_context", {})),
                 gr.update(
@@ -4287,7 +4369,13 @@ def build_approval_app(controller, initial_view=None):
                 gr.update(visible=layout["show_task_entry"]),
                 gr.update(visible=show_execution),
                 gr.update(visible=layout["show_review"]),
-                gr.update(visible=layout["show_review"] or layout["show_git"]),
+                gr.update(
+                    visible=(
+                        layout["show_review"]
+                        or layout["show_git"]
+                        or bool(view.get("unity_knowledge"))
+                    )
+                ),
                 gr.update(visible=layout["show_review"]),
                 gr.update(visible=layout["show_git"]),
                 gr.update(visible=layout["show_review"]),
@@ -4313,6 +4401,8 @@ def build_approval_app(controller, initial_view=None):
             execution_detail,
             retry_test_generation,
             review_meta,
+            unity_knowledge_info,
+            unity_knowledge_card,
             proposal_info,
             repair_context_info,
             repair_context_card,

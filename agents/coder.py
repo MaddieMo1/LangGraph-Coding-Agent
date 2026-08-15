@@ -177,7 +177,8 @@ class CoderAgent:
 1.只输出C#代码
 2.保持单一职责
 3.符合Unity工程规范
-"""
+""",
+            (state or {}).get("unity_knowledge", {}),
         )
 
 
