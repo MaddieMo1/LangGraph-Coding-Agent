@@ -8,7 +8,8 @@ def get_file_planner_prompt(
     query,
     architecture,
     project_context=None,
-    dependency_graph=None
+    dependency_graph=None,
+    requirement_contract=None,
 ):
     """
     生成文件规划Prompt
@@ -34,6 +35,11 @@ def get_file_planner_prompt(
         ensure_ascii=False,
         indent=2
     )
+    requirement_json = json.dumps(
+        requirement_contract or {},
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return f"""
 你是一名Unity高级架构师。
@@ -41,6 +47,11 @@ def get_file_planner_prompt(
 用户需求:
 
 {query}
+
+
+结构化需求契约（文件范围不得超出此契约）:
+
+{requirement_json}
 
 
 系统架构:

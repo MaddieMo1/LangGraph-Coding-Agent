@@ -36,6 +36,7 @@ class AgentState(TypedDict):
 
     # 需求分析结果
     requirements: List[str]
+    requirement_contract: Dict[str, Any]
 
     # RAG上下文
     context: List[str]

@@ -93,7 +93,8 @@ class ReviewerAgent:
                 []
             ),
             test_result,
-            state.get("memory_context", {})
+            state.get("memory_context", {}),
+            state.get("requirement_contract", {}),
         )
 
 

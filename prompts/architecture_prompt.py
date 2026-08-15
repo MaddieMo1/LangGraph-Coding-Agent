@@ -7,7 +7,12 @@ from memory.project_context import build_prompt_context
 from memory.dependency_graph import build_prompt_graph
 
 
-def get_architecture_prompt(query, project_context=None, dependency_graph=None):
+def get_architecture_prompt(
+    query,
+    project_context=None,
+    dependency_graph=None,
+    requirement_contract=None,
+):
     """
     生成架构设计Prompt
 
@@ -29,6 +34,11 @@ def get_architecture_prompt(query, project_context=None, dependency_graph=None):
         ensure_ascii=False,
         indent=2
     )
+    requirement_json = json.dumps(
+        requirement_contract or {},
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return f"""
 你是一名资深Unity游戏架构师。
@@ -38,6 +48,11 @@ def get_architecture_prompt(query, project_context=None, dependency_graph=None):
 用户需求:
 
 {query}
+
+
+结构化需求契约（范围与验收标准的唯一共享来源）:
+
+{requirement_json}
 
 
 当前 Unity 工程上下文（必须复用已有类型与命名空间，避免重复定义）:

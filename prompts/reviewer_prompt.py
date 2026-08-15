@@ -1,6 +1,7 @@
 # =========================
 # Reviewer Prompt
 # =========================
+import json
 
 
 def get_reviewer_prompt(
@@ -10,7 +11,8 @@ def get_reviewer_prompt(
     architecture,
     repair_history,
     test_result=None,
-    memory_context=None
+    memory_context=None,
+    requirement_contract=None,
 ):
     """
     获取代码审查Agent提示词
@@ -20,9 +22,19 @@ def get_reviewer_prompt(
     """
 
     memory_context = memory_context or {}
+    requirement_json = json.dumps(
+        requirement_contract or {},
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return f"""
 你是一名Unity高级代码审查工程师。
+
+
+结构化需求契约（审核不得扩大需求范围）:
+
+{requirement_json}
 
 
 你的任务:

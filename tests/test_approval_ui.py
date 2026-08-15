@@ -1020,7 +1020,8 @@ class ApprovalControllerTest(unittest.TestCase):
 
         self.assertIn("开始时间", rendered)
         self.assertIn("2026-08-13 18:00", rendered)
-        self.assertIn("执行耗时", rendered)
+        self.assertIn("任务总历时（含人工等待）", rendered)
+        self.assertNotIn("执行耗时", rendered)
         self.assertIn("2分 3秒", rendered)
         self.assertIn('data-execution-ended-at="2026-08-13T10:02:03+00:00"', rendered)
 
@@ -1357,6 +1358,22 @@ class ApprovalControllerTest(unittest.TestCase):
         app = build_approval_app(self.controller)
 
         self.assertIsNotNone(app)
+
+    def test_approval_actions_use_one_hidden_progress_click_handler(self):
+        config = build_approval_app(self.controller).get_config_file()
+        component_ids = {
+            component.get("props", {}).get("elem_id"): component.get("id")
+            for component in config["components"]
+        }
+
+        for elem_id in ("approve-all", "approve-selected", "reject-all"):
+            dependencies = [
+                dependency
+                for dependency in config["dependencies"]
+                if (component_ids[elem_id], "click") in dependency.get("targets", [])
+            ]
+            self.assertEqual(1, len(dependencies), elem_id)
+            self.assertEqual("hidden", dependencies[0]["show_progress"], elem_id)
 
     def test_task_center_components_keep_workspace_and_global_status_available(self):
         task_center_css = APPROVAL_CSS.split("#task-center-view {", 1)[1].split("}", 1)[0]

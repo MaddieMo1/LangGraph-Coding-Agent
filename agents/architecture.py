@@ -46,7 +46,8 @@ class ArchitectureAgent:
         prompt = get_architecture_prompt(
             query,
             state.get("project_context", {}),
-            state.get("dependency_graph", {})
+            state.get("dependency_graph", {}),
+            state.get("requirement_contract", {}),
         )
 
         invocation = invoke_model(self.llm, prompt, state)

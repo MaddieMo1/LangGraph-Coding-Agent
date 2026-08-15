@@ -87,7 +87,9 @@ class Day09WorkflowTest(unittest.TestCase):
         self.assertEqual("GroundClickManager.cs", root["fix_action"]["target"])
 
     def test_coordinator_places_test_generator_after_coder(self):
-        tasks = CoordinatorAgent().run({"agent_history": []})["tasks"]
+        tasks = CoordinatorAgent().run(
+            {"query": "生成背包功能", "agent_history": []}
+        )["tasks"]
 
         self.assertEqual(tasks.index("coder") + 1, tasks.index("test_generator"))
         self.assertLess(tasks.index("test_generator"), tasks.index("code_checker"))

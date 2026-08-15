@@ -31,8 +31,7 @@ env/
 # =========================
 # Generated Files
 # =========================
-generated/*
-!generated/.gitkeep
+generated/
 generated_tests/
 memory/project_context.json
 memory/dependency_graph.json

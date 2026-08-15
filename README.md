@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/Providers-DeepSeek%20%7C%20Kimi%20%7C%20Qwen%20%7C%20GLM-purple" alt="DeepSeek、Kimi、Qwen 与 GLM">
-  <img src="https://img.shields.io/badge/Version-v0.11.0-success" alt="版本 v0.11.0">
+  <img src="https://img.shields.io/badge/Version-v1.0.0-success" alt="版本 v1.0.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -69,6 +69,16 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - Long-Term Memory 使用版本化 JSON，按 Unity 项目隔离 `project_memory`、`coding_style`、`bug_history` 和 `solution_history`。
 - 只有通过后续编译或测试验证的 Repair 才会成为可复用方案；系统与环境错误不会污染缺陷记忆。
 - Reviewer 与 Repair 会优先参考同错误码的历史成功方案，但当前 Compiler、NUnit 和 Root Cause 证据始终优先。
+
+## ✅ Day15：Enterprise AI Coding Agent / v1.0
+
+- Coordinator 生成版本化结构化需求契约，统一目标、显式文件范围、工程约束和质量门；空需求安全停止。
+- Architecture、File Planner 与 Reviewer 读取同一份检查点契约，不增加 Agent 或模型调用。
+- `project_version.py` 统一应用版本，`python -m tools.environment_check` 提供只读环境预检。
+- GitHub Actions 在无 Provider、无 Unity、无密钥环境中执行离线回归、Python 编译和空白检查。
+- [Day15 Notebook](./day15/Day15.ipynb) 可离线复核需求契约、固定评估指标和发布文件一致性。
+- [v1.0.0 发布说明](./docs/releases/v1.0.0.md) 记录兼容性、安全边界、验证证据与已知限制。
+- v1.0 UI 已通过真实浏览器视觉复核；恢复中的 Unity 任务在发现 `CS1061` 后正确返回 Repair 人工审批点，没有绕过审批门禁。
 
 ## ✅ Day14：Agent Evaluation
 
@@ -299,6 +309,14 @@ Unity 测试工程必须包含有效的 `Assets/`、`Packages/` 和 `ProjectSett
 
 `GENERATED_TEST_SOURCE_PATH` 和 `WORKFLOW_CHECKPOINT_PATH` 可选，用于将生成测试与 SQLite 检查点隔离到指定运行目录；未配置时继续使用项目内默认路径。`PROJECT_CONTEXT_PATH`、`DEPENDENCY_GRAPH_PATH`、`PATCH_HISTORY_PATH`、`APPROVAL_HISTORY_PATH` 和 `LONG_TERM_MEMORY_PATH` 也支持相同的可选隔离方式。
 
+启动前可执行只读环境预检：
+
+```bash
+python -m tools.environment_check
+```
+
+预检验证 Python 版本、Provider 路由覆盖、Unity Editor、Unity 测试工程、生成代码独立 Git 仓库和 Git 身份。它不调用网络、不运行 Unity、不修改仓库，也不会输出 API Key；非零退出码表示环境尚未满足完整工作流要求。生成代码仓库可以处于脏状态，具体的任务恢复或安全归档仍由现有 Git 工作流处理。
+
 ## ▶️ 运行
 
 启动本地人工审批界面（推荐）：
@@ -416,6 +434,16 @@ python main.py
 - 确定性 JSON/Markdown 报告与 no-LLM Notebook；
 - 离线分数与真实 Provider + Unity 验收证据严格分离；
 - 零修复与 Repair 1 轮后成功两条真实链路均通过全部质量门并创建本地提交。
+
+### ✅ v1.0.0 — 已完成（Day15）
+
+- Coordinator 生成版本化结构化需求契约，并在空需求时安全停止；
+- Architecture、File Planner 与 Reviewer 共享同一目标、文件范围、约束和验收门禁；
+- `project_version.py` 作为应用版本号的单一来源，UI 标题与 README 统一为 v1.0.0；
+- `python -m tools.environment_check` 提供不联网、不泄露密钥的只读环境预检；
+- GitHub Actions 执行无需 Provider、Unity 或密钥的完整离线测试、Python 编译与空白检查。
+- `day15/Day15.ipynb` 与 `docs/releases/v1.0.0.md` 提供可复现教程、发布证据、兼容性和已知限制。
+- v1.0 UI 通过真实浏览器复核；运行时任务恢复后仍严格停在 Repair 人工审批边界。
 
 ### 🔭 后续计划
 

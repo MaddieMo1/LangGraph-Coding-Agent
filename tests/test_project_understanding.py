@@ -73,7 +73,7 @@ class ProjectUnderstandingTest(unittest.TestCase):
         self.assertNotIn("project_context", result)
 
     def test_coordinator_starts_with_project_understanding(self):
-        result = CoordinatorAgent().run({"agent_history": []})
+        result = CoordinatorAgent().run({"query": "扩展背包", "agent_history": []})
 
         self.assertEqual("project_understanding", result["tasks"][0])
 

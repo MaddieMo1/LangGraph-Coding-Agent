@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import gradio as gr
 
+from project_version import __version__
 from tools.unity_test_tool import is_test_assembly_compile_failure
 from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state
 
@@ -2977,7 +2978,7 @@ def format_execution_panel(view):
         f'<span>开始时间</span><strong>{escape(format_task_time(started_at) if started_at else "—")}</strong>'
         "</div>"
         '<div class="detail-row">'
-        '<span>执行耗时</span>'
+        '<span>任务总历时（含人工等待）</span>'
         f'<strong data-execution-started-at="{escape(started_at)}" '
         f'data-execution-ended-at="{escape(ended_at)}">{escape(elapsed)}</strong>'
         "</div>"
@@ -3811,7 +3812,7 @@ def build_approval_app(controller, initial_view=None):
     initial_saved_tasks = controller.list_tasks()
 
     with gr.Blocks(
-        title="LangGraph Coding Agent · 人工审批",
+        title=f"LangGraph Coding Agent v{__version__} · 人工审批",
         fill_height=True,
         fill_width=True,
     ) as demo:
@@ -4743,12 +4744,23 @@ def build_approval_app(controller, initial_view=None):
             [selected_patches, patches_state],
             [selection_summary, accept_selected],
         )
-        accept_all.click(accept_all_view, [thread_id, bundle_state, note], outputs)
-        reject_all.click(reject_all_view, [thread_id, bundle_state, note], outputs)
+        accept_all.click(
+            accept_all_view,
+            [thread_id, bundle_state, note],
+            outputs,
+            show_progress="hidden",
+        )
+        reject_all.click(
+            reject_all_view,
+            [thread_id, bundle_state, note],
+            outputs,
+            show_progress="hidden",
+        )
         accept_selected.click(
             accept_selected_view,
             [thread_id, bundle_state, selected_patches, note],
             outputs,
+            show_progress="hidden",
         )
 
         workspace_nav.click(show_workspace_view, outputs=[workspace_grid, task_center_view, task_detail_drawer, task_delete_confirm, workspace_nav, task_center_nav], js=SHOW_WORKSPACE_JS, show_progress="hidden")

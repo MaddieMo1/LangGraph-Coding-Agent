@@ -195,7 +195,8 @@ class FilePlannerAgent:
             state.get("query",""),
             architecture,
             state.get("project_context", {}),
-            state.get("dependency_graph", {})
+            state.get("dependency_graph", {}),
+            state.get("requirement_contract", {}),
         )
         
         invocation = invoke_model(
@@ -233,6 +234,7 @@ class FilePlannerAgent:
         files = self.enforce_explicit_file_scope(
             state.get("query", ""),
             files,
+            state.get("requirement_contract", {}),
         )
 
 
@@ -256,14 +258,22 @@ class FilePlannerAgent:
         }
 
     @staticmethod
-    def enforce_explicit_file_scope(query, files):
+    def enforce_explicit_file_scope(query, files, requirement_contract=None):
         """Honor an explicit one-file boundary without guessing extra files."""
+        contract_scope = (requirement_contract or {}).get("scope", {})
+        contract_files = contract_scope.get("requested_files", [])
+        if contract_scope.get("single_file_only") and len(contract_files) == 1:
+            requested = [str(contract_files[0])]
+        else:
+            requested = []
+
         normalized_query = str(query or "")
         single_file_words = ("单文件", "一个文件", "这一个", "仅生成", "只生成", "只规划")
-        if not any(word in normalized_query for word in single_file_words):
-            return files
-        requested = re.findall(r"(?<![\w.])([A-Za-z_][A-Za-z0-9_]*\.cs)\b", normalized_query)
-        requested = list(dict.fromkeys(requested))
+        if not requested:
+            if not any(word in normalized_query for word in single_file_words):
+                return files
+            requested = re.findall(r"(?<![\w.])([A-Za-z_][A-Za-z0-9_]*\.cs)\b", normalized_query)
+            requested = list(dict.fromkeys(requested))
         if len(requested) != 1:
             return files
         target = requested[0].lower()
