@@ -462,9 +462,17 @@ python main.py
 - `day15/Day15.ipynb` 与 `docs/releases/v1.0.0.md` 提供可复现教程、发布证据、兼容性和已知限制。
 - v1.0 UI 通过真实浏览器复核；运行时任务恢复后仍严格停在 Repair 人工审批边界。
 
+### ✅ Day16 — 已完成（Unity API 知识检索）
+
+- 在 Project Understanding 与 Architecture 之间加入确定性的 Unity Knowledge 节点，不增加新的 LLM Agent；
+- 按项目本地知识、版本化缓存、受控联网顺序检索，并默认保持离线；
+- 联网仅允许 Unity 官方文档域名，校验 HTTPS、重定向、内容边界、版本匹配和提示词注入；
+- Architecture、Coder、Reviewer 与 Repair 最多接收 3 条经过复核的只读证据，不能扩大需求契约；
+- UI 展示检索状态、Unity 版本、匹配结果、标题和官方链接，不暴露完整远程正文；
+- 离线 Notebook、真实 `Object.Destroy` 官方文档探针及 380 项完整 Python 回归测试均已通过。
+
 ### 🔭 后续计划
 
-- Unity API 知识检索；
 - 审批审计记录与权限控制；
 - 团队协作与远程任务观察；
 - 更完整的 Unity 隔离执行与验证环境。
