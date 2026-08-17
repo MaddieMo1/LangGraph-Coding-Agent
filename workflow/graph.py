@@ -31,7 +31,7 @@ from llm.invocation import RoleModel
 from llm.model_router import ModelRouteError, ModelRouter
 from llm.provider import build_default_providers
 from memory.approval import ApprovalStore
-from memory.approval_audit import ApprovalAuditStore, project_fingerprint
+from memory.approval_audit import ApprovalAuditError, ApprovalAuditStore, project_fingerprint
 from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
 from memory.dependency_graph import DependencyGraphStore
@@ -263,7 +263,128 @@ class AgentWorkflow:
 
 
     def git_commit_node(self, state):
-        return self.git_agent.commit(state)
+        validation_passed = self._validation_passed(state)
+        try:
+            self._record_system_audit(
+                state,
+                "validation_completed",
+                "quality_gates",
+                "passed" if validation_passed else "failed",
+                "" if validation_passed else "VALIDATION_FAILED",
+                idempotency_key=f"validation:{state.get('thread_id', '')}",
+            )
+        except ApprovalAuditError as error:
+            return self._git_audit_error(error)
+
+        result = self.git_agent.commit(state)
+        if result.get("git_status") != "committed":
+            return result
+
+        git_result = result.get("git_result", {})
+        note = (
+            f"branch={git_result.get('branch', '')};"
+            f"base={git_result.get('base_commit', '')};"
+            f"commit={git_result.get('commit_hash', '')}"
+        )
+        try:
+            self._record_system_audit(
+                state,
+                "git_committed",
+                "commit",
+                "committed",
+                "",
+                note=note,
+                idempotency_key=(
+                    f"git:{state.get('thread_id', '')}:"
+                    f"{git_result.get('commit_hash', '')}"
+                ),
+            )
+        except ApprovalAuditError as error:
+            return self._git_audit_error(error)
+        return result
+
+    @staticmethod
+    def _validation_passed(state):
+        review = state.get("review", {})
+        return (
+            state.get("code_check_result", {}).get("success", False)
+            and state.get("compile_result", {}).get("success", False)
+            and state.get("test_result", {}).get("success", False)
+            and isinstance(review, dict)
+            and review.get("pass", False)
+            and review.get("score", 0) >= 90
+            and not review.get("remaining_issues", [])
+        )
+
+    def _record_system_audit(
+        self,
+        state,
+        event_type,
+        action,
+        result,
+        error_code,
+        note="",
+        idempotency_key="",
+    ):
+        actor = ApprovalPolicy.system_actor()
+        thread_id = str(state.get("thread_id", "") or "")
+        bundle_id = self._latest_bundle_id(state) or f"task-{thread_id}"
+        self.approval_audit.append(
+            {
+                "event_type": event_type,
+                "thread_id": thread_id,
+                "bundle_id": bundle_id,
+                "source": "system",
+                "actor_id": actor.actor_id,
+                "role": actor.role,
+                "files": self._approved_audit_files(state),
+                "action": action,
+                "result": result,
+                "note": note,
+                "error_code": error_code,
+            },
+            idempotency_key=idempotency_key,
+        )
+
+    def _approved_audit_files(self, state):
+        approved = {
+            item.get("file")
+            for item in state.get("approved_changes", [])
+            if isinstance(item, dict)
+        }
+        files = {}
+        for history in state.get("approval_history", []):
+            if not isinstance(history, dict):
+                continue
+            bundle = self.approval_store.get(history.get("bundle_id", "")) or {}
+            for patch in bundle.get("patches", []):
+                if patch.get("file") in approved:
+                    files[patch["file"]] = {
+                        "file": patch["file"],
+                        "operation": patch["operation"],
+                        "before_hash": patch["before_hash"],
+                        "after_hash": patch["after_hash"],
+                    }
+        return [files[file_name] for file_name in sorted(files)]
+
+    @staticmethod
+    def _latest_bundle_id(state):
+        for item in reversed(state.get("approval_history", [])):
+            if isinstance(item, dict) and item.get("bundle_id"):
+                return item["bundle_id"]
+        return state.get("approval_request", {}).get("bundle_id", "")
+
+    @staticmethod
+    def _git_audit_error(error):
+        return {
+            "current_agent": "git_commit",
+            "git_status": "error",
+            "git_result": {
+                "success": False,
+                "error_code": getattr(error, "code", "AUDIT_FAILED"),
+                "error": str(error),
+            },
+        }
 
 
     def git_prepare_router(self, state):

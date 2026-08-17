@@ -11,6 +11,7 @@ from tools.change_proposal_tool import ChangeProposalTool
 from tools.diff_tool import DiffTool
 from tools.file_manager import FileManager
 from workflow.human_approval import ChangeProposalNode, HumanApprovalNode
+from workflow.graph import AgentWorkflow
 
 
 class FailApplicationAudit:
@@ -24,6 +25,14 @@ class FailApplicationAudit:
 
     def __getattr__(self, name):
         return getattr(self.store, name)
+
+
+class FakeGitAgent:
+    def __init__(self, result):
+        self.result = result
+
+    def commit(self, state):
+        return self.result
 
 
 class Day17ApprovalWorkflowTest(unittest.TestCase):
@@ -150,6 +159,83 @@ class Day17ApprovalWorkflowTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.generated_root, "A.cs")))
         self.assertEqual([], self.patch_history.list_records())
         self.assertEqual("conflicted", self.approval_store.get(bundle_id)["status"])
+
+    def test_validation_and_git_commit_record_complete_system_evidence(self):
+        policy = self.policy("approver")
+        state = self.pending_state(policy)
+        bundle_id = state["approval_request"]["bundle_id"]
+        workflow = AgentWorkflow.__new__(AgentWorkflow)
+        workflow.approval_audit = self.audit_store
+        workflow.approval_store = self.approval_store
+        workflow.git_agent = FakeGitAgent({
+            "current_agent": "git_commit",
+            "git_status": "committed",
+            "git_result": {
+                "success": True,
+                "status": "committed",
+                "branch": "agent/test",
+                "base_commit": "a" * 40,
+                "commit_hash": "b" * 40,
+                "error_code": "",
+                "error": "",
+            },
+        })
+        state.update({
+            "approval_history": [{"bundle_id": bundle_id, "source": "coder"}],
+            "approved_changes": [{
+                "file": "A.cs",
+                "operation": "create",
+                "after_hash": self.approval_store.get(bundle_id)["patches"][0]["after_hash"],
+            }],
+            "git_branch": "agent/test",
+            "git_base_commit": "a" * 40,
+            "code_check_result": {"success": True},
+            "compile_result": {"success": True},
+            "test_result": {"success": True},
+            "review": {"pass": True, "score": 95, "remaining_issues": []},
+        })
+
+        result = workflow.git_commit_node(state)
+        events = self.audit_store.list_events()[-2:]
+
+        self.assertEqual("committed", result["git_status"])
+        self.assertEqual(
+            ["validation_completed", "git_committed"],
+            [event["event_type"] for event in events],
+        )
+        self.assertEqual({"system"}, {event["actor_id"] for event in events})
+        self.assertEqual({"system"}, {event["role"] for event in events})
+        self.assertEqual("A.cs", events[1]["files"][0]["file"])
+        self.assertEqual(
+            self.approval_store.get(bundle_id)["patches"][0]["before_hash"],
+            events[1]["files"][0]["before_hash"],
+        )
+        self.assertIn("commit=" + "b" * 40, events[1]["note"])
+
+    def test_failed_validation_records_failure_without_git_success(self):
+        policy = self.policy("approver")
+        state = self.pending_state(policy)
+        workflow = AgentWorkflow.__new__(AgentWorkflow)
+        workflow.approval_audit = self.audit_store
+        workflow.approval_store = self.approval_store
+        workflow.git_agent = FakeGitAgent({
+            "current_agent": "git_commit",
+            "git_status": "error",
+            "git_result": {
+                "success": False,
+                "error_code": "VALIDATION_FAILED",
+                "error": "validation failed",
+            },
+        })
+
+        result = workflow.git_commit_node(state)
+        events = self.audit_store.list_events()
+
+        self.assertEqual("error", result["git_status"])
+        self.assertEqual("validation_completed", events[-1]["event_type"])
+        self.assertEqual("failed", events[-1]["result"])
+        self.assertEqual("VALIDATION_FAILED", events[-1]["error_code"])
+        self.assertNotIn("git_committed", [event["event_type"] for event in events])
 
 
 if __name__ == "__main__":
