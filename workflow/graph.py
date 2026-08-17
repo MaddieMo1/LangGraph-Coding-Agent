@@ -161,6 +161,7 @@ class AgentWorkflow:
                 )
             )
         )
+        os.makedirs(generated_path, exist_ok=True)
 
         self.approval_policy = ApprovalPolicy.from_environment()
         self.approval_audit = ApprovalAuditStore(
