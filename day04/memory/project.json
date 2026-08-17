@@ -1,0 +1,7 @@
+{
+    "project_name": "Unity VR Training",
+    "engine": "Unity",
+    "version": "2022.3",
+    "language": "C#",
+    "architecture": "MVC"
+}

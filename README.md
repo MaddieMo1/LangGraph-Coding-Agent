@@ -30,6 +30,30 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
+## 📚 Day01～Day15 学习路线
+
+仓库保留了从基础 Tool Agent 到 v1.0 工程化 Coding Agent 的完整演进过程。建议按顺序阅读各阶段 Notebook；Day04～Day06 同时保留了当时版本的配套源码和 Unity 示例工程，便于对照最终架构理解每一步的变化。
+
+| 阶段 | 主题 | 学习材料 |
+|---|---|---|
+| Day01 | Tool Agent 与多工具调用 | [Tool Agent](./day01/day01_tool_agent.ipynb) / [Multi-Tool Agent](./day01/day01_multi_tool_agent.ipynb) |
+| Day02 | LangGraph 状态、节点、条件路由与 Checkpoint | [基础版](./day02/Day02_LangGraph_Agent.ipynb) / [DeepSeek 版](./day02/Day02_LangGraph_Agent_DeepSeek.ipynb) |
+| Day03 | Unity 知识库、Embedding、FAISS 与 RAG | [RAG 基础](./day03/Day03_RAG_Basic.ipynb) / [RAG + LangGraph](./day03/Day03_RAG_LangGraph_Agent.ipynb) |
+| Day04 | 读取真实项目并生成代码 | [Day04 Notebook](./day04/Day04_Coding_Agent.ipynb) |
+| Day05 | 多 Agent、Reviewer 与基础 Repair Loop | [Day05 Notebook](./day05/Day05.ipynb) / [完整流程记录](./day05/Day05_Multi_Agent_Test.ipynb) |
+| Day06 | Unity 编译、结构化错误、Diff Patch 与撤销 | [Day06 Notebook](./day06/Day06.ipynb) |
+| Day07 | Unity Project Understanding | [Day07 Notebook](./day07/Day07.ipynb) |
+| Day08 | 类型依赖图与影响范围分析 | [Day08 Notebook](./day08/Day08.ipynb) |
+| Day09 | EditMode 测试生成与隔离执行 | [Day09 Notebook](./day09/Day09.ipynb) |
+| Day10 | 项目级长期记忆 | [Day10 Notebook](./day10/Day10.ipynb) |
+| Day11 | `interrupt` 人工审批与 SQLite 恢复 | [Day11 Notebook](./day11/Day11.ipynb) |
+| Day12 | 安全本地 Git 分支与提交 | [Day12 Notebook](./day12/Day12.ipynb) |
+| Day13 | DeepSeek、Kimi、Qwen、GLM 多模型路由 | [Day13 Notebook](./day13/Day13.ipynb) |
+| Day14 | 离线基准与真实 Agent 评估 | [Day14 Notebook](./day14/Day14.ipynb) |
+| Day15 | 需求契约、环境预检、CI 与 v1.0 发布 | [Day15 Notebook](./day15/Day15.ipynb) |
+
+> 说明：Day01～Day09 是早期学习快照，保留了当时的实现方式和部分运行输出。模型密钥统一从环境变量读取；涉及真实 Unity 工程的 Notebook 需要根据本机环境设置 `UNITY_EDITOR_PATH` 和 `UNITY_TEST_PROJECT_PATH`。缓存、`.env`、本地向量索引、运行时 JSON 和生成代码未纳入仓库。
+
 ## ✨ 已实现能力
 
 - 新增顶部“工作台 / 任务中心”双视图：任务中心提供四类状态统计、搜索与状态筛选、每页 10 条横向任务卡片、右侧详情抽屉以及非活动任务的多选和批量删除。
