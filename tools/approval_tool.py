@@ -1,12 +1,13 @@
 class ApprovalTool:
     """Apply a human-approved patch subset as one compensated transaction."""
 
-    def __init__(self, approval_store, diff_tool, patch_history):
+    def __init__(self, approval_store, diff_tool, patch_history, audit_store=None):
         self.approval_store = approval_store
         self.diff_tool = diff_tool
         self.patch_history = patch_history
+        self.audit_store = audit_store
 
-    def apply_decision(self, bundle_id, decision):
+    def apply_decision(self, bundle_id, decision, audit_context=None):
         bundle = self.approval_store.get(bundle_id)
         if bundle is None:
             return self._failure("BUNDLE_NOT_FOUND", "approval bundle not found")
@@ -34,6 +35,24 @@ class ApprovalTool:
                 [],
                 note,
             )
+            try:
+                self._record_application(
+                    bundle,
+                    audit_context,
+                    "application_succeeded",
+                    "rejected",
+                    action,
+                    mode,
+                    note,
+                )
+            except ValueError as error:
+                return self._compensate_audit_failure(
+                    bundle,
+                    mode,
+                    [],
+                    note,
+                    error,
+                )
             return self._success(rejected, [])
 
         selected_patches = [
@@ -51,6 +70,24 @@ class ApprovalTool:
                     note,
                     preview.get("error", "patch preflight failed"),
                 )
+                try:
+                    self._record_application(
+                        bundle,
+                        audit_context,
+                        "application_conflicted",
+                        "conflicted",
+                        action,
+                        mode,
+                        note,
+                        preview.get("error_code", "CONFLICT"),
+                    )
+                except ValueError as error:
+                    return self._failure(
+                        getattr(error, "code", "AUDIT_FAILED"),
+                        str(error),
+                        bundle_id,
+                        status="conflicted",
+                    )
                 return self._failure(
                     preview.get("error_code", "CONFLICT"),
                     conflicted.get("error", "patch preflight failed"),
@@ -75,6 +112,24 @@ class ApprovalTool:
                     note,
                     error,
                 )
+                try:
+                    self._record_application(
+                        bundle,
+                        audit_context,
+                        "application_conflicted",
+                        "conflicted",
+                        action,
+                        mode,
+                        note,
+                        result.get("error_code", "APPLY_FAILED"),
+                    )
+                except ValueError as audit_error:
+                    return self._failure(
+                        getattr(audit_error, "code", "AUDIT_FAILED"),
+                        str(audit_error),
+                        bundle_id,
+                        status="conflicted",
+                    )
                 return self._failure(
                     result.get("error_code", "APPLY_FAILED"),
                     error,
@@ -109,6 +164,15 @@ class ApprovalTool:
                 accepted_ids,
                 note,
             )
+            self._record_application(
+                bundle,
+                audit_context,
+                "application_succeeded",
+                status,
+                action,
+                mode,
+                note,
+            )
         except (OSError, ValueError, KeyError) as error:
             if records:
                 self.patch_history.remove_records(
@@ -118,6 +182,7 @@ class ApprovalTool:
             message = str(error)
             if rollback_error:
                 message += f"; rollback failed: {rollback_error}"
+            self.approval_store.restore_bundle(bundle)
             self.approval_store.finalize(
                 bundle_id,
                 "conflicted",
@@ -127,7 +192,7 @@ class ApprovalTool:
                 message,
             )
             return self._failure(
-                "TRANSACTION_FAILED",
+                getattr(error, "code", "TRANSACTION_FAILED"),
                 message,
                 bundle_id,
                 status="conflicted",
@@ -136,6 +201,70 @@ class ApprovalTool:
         return self._success(
             finalized,
             [record["patch_id"] for record in records],
+        )
+
+    def _record_application(
+        self,
+        bundle,
+        context,
+        event_type,
+        result,
+        action,
+        mode,
+        note,
+        error_code="",
+    ):
+        if self.audit_store is None or context is None:
+            return
+        self.audit_store.append(
+            {
+                "event_type": event_type,
+                "thread_id": context["thread_id"],
+                "bundle_id": bundle["bundle_id"],
+                "source": bundle["source"],
+                "actor_id": context["actor_id"],
+                "role": context["role"],
+                "files": [
+                    {
+                        "file": patch["file"],
+                        "operation": patch["operation"],
+                        "before_hash": patch["before_hash"],
+                        "after_hash": patch["after_hash"],
+                    }
+                    for patch in bundle["patches"]
+                ],
+                "action": f"{action}:{mode}",
+                "result": result,
+                "note": note,
+                "error_code": error_code,
+            },
+            idempotency_key=(
+                f"application:{context['thread_id']}:{bundle['bundle_id']}"
+            ),
+        )
+
+    def _compensate_audit_failure(
+        self,
+        bundle,
+        mode,
+        accepted_ids,
+        note,
+        error,
+    ):
+        self.approval_store.restore_bundle(bundle)
+        self.approval_store.finalize(
+            bundle["bundle_id"],
+            "conflicted",
+            mode,
+            accepted_ids,
+            note,
+            str(error),
+        )
+        return self._failure(
+            getattr(error, "code", "AUDIT_FAILED"),
+            str(error),
+            bundle["bundle_id"],
+            status="conflicted",
         )
 
     def _normalize_decision(self, bundle, decision):

@@ -22,6 +22,9 @@ class AgentState(TypedDict):
     9. 修复状态
     """
 
+    # 持久化工作流线程
+    thread_id: str
+
     # 用户输入需求
     query: str
 

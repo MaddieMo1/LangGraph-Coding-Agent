@@ -69,6 +69,16 @@ class ApprovalStore:
             if bundle.get("status") == "pending"
         ]
 
+    def restore_bundle(self, snapshot):
+        self._validate_bundle(snapshot)
+        bundle_id = snapshot["bundle_id"]
+        for index, bundle in enumerate(self.data["bundles"]):
+            if bundle.get("bundle_id") == bundle_id:
+                self.data["bundles"][index] = copy.deepcopy(snapshot)
+                self._save()
+                return copy.deepcopy(snapshot)
+        raise KeyError(f"approval bundle not found: {bundle_id}")
+
     def finalize(
         self,
         bundle_id,

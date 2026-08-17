@@ -31,12 +31,14 @@ from llm.invocation import RoleModel
 from llm.model_router import ModelRouteError, ModelRouter
 from llm.provider import build_default_providers
 from memory.approval import ApprovalStore
+from memory.approval_audit import ApprovalAuditStore, project_fingerprint
 from memory.patch_history import PatchHistory
 from memory.project_context import ProjectContextStore
 from memory.dependency_graph import DependencyGraphStore
 from memory.long_term import LongTermMemoryStore
 from memory.unity_knowledge import UnityKnowledgeStore
 from tools.approval_tool import ApprovalTool
+from tools.approval_policy import ApprovalPolicy
 from tools.change_proposal_tool import ChangeProposalTool
 from tools.diff_tool import DiffTool
 from tools.dependency_graph import DependencyGraphBuilder
@@ -160,6 +162,15 @@ class AgentWorkflow:
             )
         )
 
+        self.approval_policy = ApprovalPolicy.from_environment()
+        self.approval_audit = ApprovalAuditStore(
+            os.getenv(
+                "APPROVAL_AUDIT_PATH",
+                os.path.join(day06_path, "memory", "approval_audit.jsonl"),
+            ),
+            project_fingerprint(generated_path),
+        )
+
         self.git_agent = GitAgent(
             GitTool(generated_path)
         )
@@ -193,16 +204,21 @@ class AgentWorkflow:
         self.approval_tool = ApprovalTool(
             self.approval_store,
             self.diff_tool,
-            self.patch_history
+            self.patch_history,
+            audit_store=self.approval_audit,
         )
 
         self.change_proposal = ChangeProposalNode(
             self.change_proposal_tool,
-            self.approval_store
+            self.approval_store,
+            approval_policy=self.approval_policy,
+            audit_store=self.approval_audit,
         )
 
         self.human_approval = HumanApprovalNode(
-            self.approval_tool
+            self.approval_tool,
+            approval_policy=self.approval_policy,
+            audit_store=self.approval_audit,
         )
 
         self.coder = CoderAgent(
