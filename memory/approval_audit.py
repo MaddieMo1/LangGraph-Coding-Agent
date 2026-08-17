@@ -12,6 +12,13 @@ GENESIS_HASH = "0" * 64
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 IDENTIFIER_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}")
 ACTOR_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,63}")
+AUTHORIZATION_PATTERN = re.compile(
+    r"(?i)\bauthorization\s*:\s*bearer\s+\S+"
+)
+SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|token|secret|password)\s*[:=]\s*\S+"
+)
+CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]+")
 
 
 class ApprovalAuditError(ValueError):
@@ -99,6 +106,26 @@ class ApprovalAuditStore:
                     "AUDIT_EVENT_INVALID",
                     "approval audit event is invalid",
                 )
+            if key:
+                existing = next(
+                    (
+                        item
+                        for item in events
+                        if item.get("idempotency_key") == key
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    existing_event = {
+                        field: existing[field]
+                        for field in self.EVENT_FIELDS
+                    }
+                    if existing_event == normalized:
+                        return copy.deepcopy(existing)
+                    raise ApprovalAuditError(
+                        "AUDIT_IDEMPOTENCY_CONFLICT",
+                        "approval audit idempotency conflict",
+                    )
             now = self.clock()
             if not isinstance(now, datetime):
                 raise ApprovalAuditError(
@@ -111,7 +138,13 @@ class ApprovalAuditStore:
             record = {
                 "schema_version": self.SCHEMA_VERSION,
                 "sequence": len(events) + 1,
-                "event_id": uuid.uuid4().hex,
+                "event_id": (
+                    hashlib.sha256(
+                        f"{self.project_id}\0{key}".encode("utf-8")
+                    ).hexdigest()[:32]
+                    if key
+                    else uuid.uuid4().hex
+                ),
                 "recorded_at": recorded_at,
                 "project_id": self.project_id,
                 **normalized,
@@ -145,6 +178,87 @@ class ApprovalAuditStore:
         with self._lock:
             self._load_verified()
         return True
+
+    def export_verified(self):
+        with self._lock:
+            events = self._load_verified()
+            return {
+                "schema_version": self.SCHEMA_VERSION,
+                "project_id": self.project_id,
+                "verified": True,
+                "events": copy.deepcopy(events),
+            }
+
+    def import_legacy_bundle(self, thread_id, bundle, actor):
+        try:
+            if (
+                not isinstance(bundle, dict)
+                or not isinstance(actor, dict)
+                or set(actor) != {"actor_id", "role"}
+            ):
+                raise ValueError
+            bundle_id = bundle["bundle_id"]
+            source = bundle["source"]
+            status = bundle["status"]
+            created_at = bundle["created_at"]
+            patches = bundle["patches"]
+            timestamp = datetime.fromisoformat(created_at)
+            if (
+                source not in {"coder", "repair"}
+                or status not in {
+                    "pending",
+                    "approved",
+                    "partially_approved",
+                    "rejected",
+                    "conflicted",
+                }
+                or timestamp.tzinfo is None
+                or not isinstance(patches, list)
+                or not patches
+            ):
+                raise ValueError
+            files = [
+                {
+                    "file": patch["file"],
+                    "operation": patch["operation"],
+                    "before_hash": patch["before_hash"],
+                    "after_hash": patch["after_hash"],
+                }
+                for patch in patches
+            ]
+        except (KeyError, TypeError, ValueError) as error:
+            raise ApprovalAuditError(
+                "AUDIT_LEGACY_INVALID",
+                "legacy approval bundle is invalid",
+            ) from error
+        event = {
+            "event_type": "legacy_bundle_imported",
+            "thread_id": thread_id,
+            "bundle_id": bundle_id,
+            "source": source,
+            "actor_id": actor["actor_id"],
+            "role": actor["role"],
+            "files": files,
+            "action": "legacy_import",
+            "result": status,
+            "note": (
+                f"legacy_created_at={created_at}; "
+                "earlier approval view activity unavailable"
+            ),
+            "error_code": "",
+        }
+        try:
+            return self.append(
+                event,
+                idempotency_key=f"legacy:{thread_id}:{bundle_id}",
+            )
+        except ApprovalAuditError as error:
+            if error.code == "AUDIT_EVENT_INVALID":
+                raise ApprovalAuditError(
+                    "AUDIT_LEGACY_INVALID",
+                    "legacy approval bundle is invalid",
+                ) from error
+            raise
 
     def _load_verified(self):
         if not os.path.exists(self.path):
@@ -232,6 +346,7 @@ class ApprovalAuditStore:
                 "approval audit event is invalid",
             )
         normalized = copy.deepcopy(event)
+        normalized["event_type"] = str(normalized["event_type"]).strip().lower()
         if normalized["event_type"] not in self.EVENT_TYPES:
             self._invalid_event()
         for field in (
@@ -247,6 +362,18 @@ class ApprovalAuditStore:
         ):
             if not isinstance(normalized[field], str):
                 self._invalid_event()
+        normalized["thread_id"] = normalized["thread_id"].strip()
+        normalized["bundle_id"] = normalized["bundle_id"].strip()
+        normalized["source"] = normalized["source"].strip().lower()
+        normalized["actor_id"] = normalized["actor_id"].strip()
+        normalized["role"] = normalized["role"].strip().lower()
+        normalized["action"] = self._plain_text(normalized["action"], 64).lower()
+        normalized["result"] = self._plain_text(normalized["result"], 64).lower()
+        normalized["note"] = self._sanitize_note(normalized["note"])
+        normalized["error_code"] = self._plain_text(
+            normalized["error_code"],
+            64,
+        ).upper()
         if (
             IDENTIFIER_PATTERN.fullmatch(normalized["thread_id"]) is None
             or IDENTIFIER_PATTERN.fullmatch(normalized["bundle_id"]) is None
@@ -259,10 +386,9 @@ class ApprovalAuditStore:
                 "operator",
                 "system",
             }
-            or len(normalized["action"]) > 64
-            or len(normalized["result"]) > 64
-            or len(normalized["note"]) > 1000
-            or len(normalized["error_code"]) > 64
+            or re.fullmatch(r"[a-z0-9_.:-]*", normalized["action"]) is None
+            or re.fullmatch(r"[a-z0-9_.:-]*", normalized["result"]) is None
+            or re.fullmatch(r"[A-Z0-9_]*", normalized["error_code"]) is None
         ):
             self._invalid_event()
         normalized["files"] = self._normalize_files(normalized["files"])
@@ -277,6 +403,8 @@ class ApprovalAuditStore:
             if not isinstance(item, dict) or set(item) != self.FILE_FIELDS:
                 self._invalid_event()
             file_name = item["file"]
+            if isinstance(file_name, str):
+                file_name = file_name.strip().replace("\\", "/")
             if (
                 not isinstance(file_name, str)
                 or not file_name
@@ -289,8 +417,30 @@ class ApprovalAuditStore:
             ):
                 self._invalid_event()
             seen.add(file_name)
-            normalized.append(copy.deepcopy(item))
-        return normalized
+            normalized.append({
+                "file": file_name,
+                "operation": item["operation"],
+                "before_hash": item["before_hash"],
+                "after_hash": item["after_hash"],
+            })
+        return sorted(normalized, key=lambda item: item["file"])
+
+    @staticmethod
+    def _plain_text(value, limit):
+        cleaned = CONTROL_PATTERN.sub(" ", value)
+        return " ".join(cleaned.split())[:limit]
+
+    @classmethod
+    def _sanitize_note(cls, value):
+        cleaned = AUTHORIZATION_PATTERN.sub(
+            "Authorization: Bearer [REDACTED]",
+            value,
+        )
+        cleaned = SECRET_PATTERN.sub(
+            lambda match: f"{match.group(1)}=[REDACTED]",
+            cleaned,
+        )
+        return cls._plain_text(cleaned, 500)
 
     @staticmethod
     def _invalid_event():

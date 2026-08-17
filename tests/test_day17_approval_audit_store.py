@@ -159,6 +159,144 @@ class ApprovalAuditStoreTest(unittest.TestCase):
                 self.assertEqual("AUDIT_EVENT_INVALID", raised.exception.code)
                 self.assertFalse(self.path.exists())
 
+    def test_identical_idempotent_append_returns_the_existing_event(self):
+        store = self.store()
+        event = self.event("decision_authorized", action="approve")
+
+        first = store.append(event, idempotency_key="decision:bundle-1:alice")
+        second = store.append(event, idempotency_key="decision:bundle-1:alice")
+
+        self.assertEqual(first, second)
+        self.assertEqual(1, len(store.list_events()))
+
+    def test_conflicting_payload_with_the_same_business_key_fails(self):
+        store = self.store()
+        store.append(
+            self.event("decision_authorized", action="approve"),
+            idempotency_key="decision:bundle-1:alice",
+        )
+
+        with self.assertRaises(ApprovalAuditError) as raised:
+            store.append(
+                self.event("decision_authorized", action="reject"),
+                idempotency_key="decision:bundle-1:alice",
+            )
+
+        self.assertEqual("AUDIT_IDEMPOTENCY_CONFLICT", raised.exception.code)
+        self.assertEqual(1, len(store.list_events()))
+
+    def test_sanitizes_and_bounds_untrusted_note_content(self):
+        stored = self.store().append(self.event(
+            note=(
+                "Authorization: Bearer secret-value\n"
+                "api_key=top-secret\x00 "
+                + "x" * 900
+            )
+        ))
+
+        self.assertNotIn("secret-value", stored["note"])
+        self.assertNotIn("top-secret", stored["note"])
+        self.assertNotIn("\n", stored["note"])
+        self.assertNotIn("\x00", stored["note"])
+        self.assertLessEqual(len(stored["note"]), 500)
+        self.assertIn("[REDACTED]", stored["note"])
+
+    def test_normalizes_sorts_and_bounds_file_metadata(self):
+        stored = self.store().append(self.event(files=[
+            {
+                "file": "Zeta\\Later.cs",
+                "operation": "create",
+                "before_hash": "c" * 64,
+                "after_hash": "d" * 64,
+            },
+            {
+                "file": "Alpha.cs",
+                "operation": "modify",
+                "before_hash": "a" * 64,
+                "after_hash": "b" * 64,
+            },
+        ]))
+
+        self.assertEqual(
+            ["Alpha.cs", "Zeta/Later.cs"],
+            [item["file"] for item in stored["files"]],
+        )
+
+    def test_rejects_forbidden_content_fields_and_absolute_paths(self):
+        forbidden = [
+            {**self.event(), "diff": "full source"},
+            {**self.event(), "source_body": "class Secret {}"},
+            self.event(files=[{
+                "file": str(self.repository_root / "Secret.cs"),
+                "operation": "create",
+                "before_hash": "a" * 64,
+                "after_hash": "b" * 64,
+            }]),
+        ]
+
+        for event in forbidden:
+            with self.subTest(event=event):
+                with self.assertRaises(ApprovalAuditError) as raised:
+                    self.store().append(event)
+                self.assertEqual("AUDIT_EVENT_INVALID", raised.exception.code)
+                self.assertFalse(self.path.exists())
+
+    def test_exports_only_a_verified_sanitized_project_chain(self):
+        store = self.store()
+        store.append(self.event(note="token=secret-value"))
+
+        exported = store.export_verified()
+        serialized = json.dumps(exported, ensure_ascii=False)
+
+        self.assertEqual(1, exported["schema_version"])
+        self.assertEqual(self.project_id, exported["project_id"])
+        self.assertTrue(exported["verified"])
+        self.assertEqual(1, len(exported["events"]))
+        self.assertNotIn("secret-value", serialized)
+        self.assertNotIn(str(self.repository_root), serialized)
+
+    def test_imports_a_legacy_bundle_once_without_diff_content(self):
+        store = self.store()
+        bundle = {
+            "bundle_id": "legacy-bundle",
+            "source": "repair",
+            "status": "pending",
+            "created_at": "2026-08-15T08:00:00+00:00",
+            "patches": [
+                {
+                    "file": "SafeCounter.cs",
+                    "operation": "modify",
+                    "before_hash": "a" * 64,
+                    "after_hash": "b" * 64,
+                    "diff": "SECRET FULL DIFF",
+                }
+            ],
+        }
+        actor = {"actor_id": "alice", "role": "approver"}
+
+        first = store.import_legacy_bundle("thread-1", bundle, actor)
+        second = store.import_legacy_bundle("thread-1", bundle, actor)
+
+        self.assertEqual(first, second)
+        self.assertEqual("legacy_bundle_imported", first["event_type"])
+        self.assertIn(bundle["created_at"], first["note"])
+        self.assertNotIn(
+            "SECRET FULL DIFF",
+            json.dumps(store.export_verified(), ensure_ascii=False),
+        )
+        self.assertEqual(1, len(store.list_events()))
+
+    def test_rejects_an_invalid_legacy_bundle_without_writing(self):
+        with self.assertRaises(ApprovalAuditError) as raised:
+            self.store().import_legacy_bundle(
+                "thread-1",
+                {"bundle_id": "legacy-bundle", "patches": []},
+                {"actor_id": "alice", "role": "approver"},
+            )
+
+        self.assertEqual("AUDIT_LEGACY_INVALID", raised.exception.code)
+        self.assertFalse(self.path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
