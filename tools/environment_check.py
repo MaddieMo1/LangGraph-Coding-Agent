@@ -7,6 +7,7 @@ from llm.model_router import default_routes
 from llm.provider import PROVIDER_SETTINGS
 from tools.approval_policy import ApprovalPolicy
 from tools.git_tool import GitTool
+from ui.observation_app import ObservationSecurityError, ObservationSettings
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,6 +99,24 @@ def inspect_environment(
             ),
         )
     )
+
+    try:
+        observation = ObservationSettings.from_environment(environment)
+        if observation.enabled:
+            transport = "HTTPS" if observation.tls_certfile else "explicit insecure HTTP"
+            observation_message = f"read-only observation enabled over {transport}"
+        else:
+            observation_message = "disabled; local control remains loopback-only"
+        checks.append(_check("Team observation", True, message=observation_message))
+    except ObservationSecurityError as error:
+        checks.append(
+            _check(
+                "Team observation",
+                False,
+                error.code,
+                "review read-only token, listener, and TLS settings",
+            )
+        )
 
     configured = _configured_providers(environment)
     uncovered_routes = []
