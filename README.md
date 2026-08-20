@@ -30,7 +30,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## 📚 Day01～Day15 学习路线
+## 📚 Day01～Day18 学习路线
 
 仓库保留了从基础 Tool Agent 到 v1.0 工程化 Coding Agent 的完整演进过程。建议按顺序阅读各阶段 Notebook；Day04～Day06 同时保留了当时版本的配套源码和 Unity 示例工程，便于对照最终架构理解每一步的变化。
 
@@ -51,6 +51,9 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 | Day13 | DeepSeek、Kimi、Qwen、GLM 多模型路由 | [Day13 Notebook](./day13/Day13.ipynb) |
 | Day14 | 离线基准与真实 Agent 评估 | [Day14 Notebook](./day14/Day14.ipynb) |
 | Day15 | 需求契约、环境预检、CI 与 v1.0 发布 | [Day15 Notebook](./day15/Day15.ipynb) |
+| Day16 | Unity API 可信知识检索 | [Day16 Notebook](./day16/Day16.ipynb) |
+| Day17 | 审批审计与本地权限控制 | [Day17 Notebook](./day17/Day17.ipynb) |
+| Day18 | 团队只读观察、SSE 与断线续传 | [Day18 Notebook](./day18/Day18.ipynb) |
 
 > 说明：Day01～Day09 是早期学习快照，保留了当时的实现方式和部分运行输出。模型密钥统一从环境变量读取；涉及真实 Unity 工程的 Notebook 需要根据本机环境设置 `UNITY_EDITOR_PATH` 和 `UNITY_TEST_PROJECT_PATH`。缓存、`.env`、本地向量索引、运行时 JSON 和生成代码未纳入仓库。
 
@@ -364,9 +367,31 @@ APPROVAL_AUDIT_PATH=D:\path\to\runtime-state\approval_audit.jsonl
 
 `APPROVAL_AUDIT_PATH` 是运行时证据，不是源代码。JSONL 中只保存相对文件名、操作、内容哈希、角色、结果和经过清理的有界备注；不保存完整 Diff、源码、Prompt、模型响应、绝对路径或密钥。每条记录包含单调序号、前序哈希和事件哈希，读取、导出和写入前都会验证完整链。
 
-这套启动身份**不是登录系统**，不提供密码、远程认证或浏览器角色切换，只适用于受信任的本机操作者。应用仍仅监听 `127.0.0.1`；在开放局域网、公网或多人远程操作前，需要另行设计真实认证与安全会话。
+这套启动身份**不是登录系统**，不提供密码、远程认证或浏览器角色切换，只适用于受信任的本机操作者。Day17 的控制面仍仅监听 `127.0.0.1` 语义：Day18 启用全接口监听时，中间件会拒绝非回环来源访问根路径，只放行 `/observe`；局域网观察面不会把审批或运行控制权开放给远程浏览器。
 
 [Day17 Notebook](./day17/Day17.ipynb) 可完全离线复核角色能力、审计事件链接、敏感备注清理和只读验证导出。
+
+### Day18 — 团队只读观察
+
+远程观察默认关闭。启用时，同一个 FastAPI/Gradio 服务在根路径保留本地控制面，并在 `/observe/ui` 提供局域网只读页面：
+
+```env
+OBSERVATION_ENABLED=true
+OBSERVATION_READ_TOKEN=replace-with-a-random-token-at-least-32-characters
+OBSERVATION_SERVER_NAME=0.0.0.0
+OBSERVATION_SERVER_PORT=7860
+OBSERVATION_TLS_CERTFILE=D:\path\to\tls\certificate.pem
+OBSERVATION_TLS_KEYFILE=D:\path\to\tls\private-key.pem
+OBSERVATION_ALLOW_INSECURE_HTTP=false
+```
+
+非回环地址必须使用 32～256 字符的共享只读令牌。推荐同时配置 TLS 证书和私钥；只有明确接受局域网 HTTP 可能被窃听令牌与观察数据的风险时，才将 `OBSERVATION_ALLOW_INSECURE_HTTP` 设为 `true`。令牌通过 `POST /observe/session` 换取 `HttpOnly`、`SameSite=Strict` 会话 Cookie，不进入 URL、浏览器持久存储或服务日志。
+
+观察者可填写可选名称，服务端分配不透明观察者 ID。浏览器每 20 秒发送一次在线心跳，60 秒无心跳即显示离线；SSE 使用全局单调游标，并支持标准 `Last-Event-ID` 以及页面重载时的 `after_cursor` 续传。派生事件默认保留 7 天、每个项目最多 5000 条，工作流 SQLite checkpoint 始终是权威状态。
+
+远程响应只包含经过白名单和脱敏的数据：任务阶段、质量门结果、有限错误摘要、模型路由元数据、本地提交哈希和产物文件名。绝对路径、源码、完整 Diff、Prompt、模型响应、环境变量和密钥不会输出。观察路由没有批准、拒绝、继续、重试、取消、Git 或文件修改能力。
+
+[Day18 Notebook](./day18/Day18.ipynb) 可离线复核契约、事件投影、游标续传和多观察者在线状态；[Day18 发布说明](./docs/releases/day18-team-observation.md) 记录完整安全边界与验证证据。
 
 启动前可执行只读环境预检：
 
@@ -374,17 +399,17 @@ APPROVAL_AUDIT_PATH=D:\path\to\runtime-state\approval_audit.jsonl
 python -m tools.environment_check
 ```
 
-预检验证 Python 版本、本地审批角色、审计目录、Provider 路由覆盖、Unity Editor、Unity 测试工程、生成代码独立 Git 仓库和 Git 身份。它不调用网络、不运行 Unity、不修改仓库，也不会输出身份值、运行时路径或 API Key；非零退出码表示环境尚未满足完整工作流要求。生成代码仓库可以处于脏状态，具体的任务恢复或安全归档仍由现有 Git 工作流处理。
+预检验证 Python 版本、本地审批角色、审计目录、团队观察配置、Provider 路由覆盖、Unity Editor、Unity 测试工程、生成代码独立 Git 仓库和 Git 身份。它不调用网络、不运行 Unity、不修改仓库，也不会输出身份值、令牌、运行时路径或 API Key；非零退出码表示环境尚未满足完整工作流要求。生成代码仓库可以处于脏状态，具体的任务恢复或安全归档仍由现有 Git 工作流处理。
 
 ## ▶️ 运行
 
-启动本地人工审批界面（推荐）：
+启动人工审批与可选团队观察服务：
 
 ```bash
 python app.py
 ```
 
-Gradio 仅监听 `127.0.0.1`，不会自动创建公共分享链接。默认检查点位于 `memory/workflow_checkpoints.sqlite`；刷新或重启后，可在“恢复已有任务”中直接选择 SQLite 保存的任务。
+未启用远程观察时，服务仅监听 `127.0.0.1`；启用后监听 `OBSERVATION_SERVER_NAME`，但根路径仍是受 Day17 本地身份约束的控制面，团队成员只应访问 `/observe/ui`。服务不会自动创建公共分享链接。默认检查点位于 `memory/workflow_checkpoints.sqlite`；刷新或重启后，可在“恢复已有任务”中直接选择 SQLite 保存的任务。
 
 运行命令行示例：
 
@@ -521,10 +546,18 @@ python main.py
 - UI 按当前能力显示可执行操作及拒绝原因，但本阶段仍是本机启动身份，不是登录或远程认证系统；
 - Day17 Notebook 已离线执行 10 个单元且无错误；38 项 Day17 测试和 419 项完整 Python 回归测试均已通过。
 
+### ✅ Day18 — 已完成（团队只读观察）
+
+- 同一 FastAPI/Gradio 服务增加 `/observe` 只读接口和 `/observe/ui` 观察页面，不引入第二套任务运行服务；
+- checkpoint 保持权威状态，经过白名单与脱敏的派生快照和事件写入同一 SQLite 文件中的独立表，并使用独立短连接；
+- SSE 通过单调游标、`Last-Event-ID` 和 `after_cursor` 支持断线续传、游标过期重置与保活；
+- 共享强令牌只用于换取服务端会话，观察者 ID、可选名称与在线心跳支持多观察者并发浏览；
+- 远程路由没有审批、继续、重试、取消、Git、源码或 Diff 修改能力，投影失败也不会改变工作流结果；
+- Day18 Notebook 已离线执行 5 个代码单元且无错误；482 项完整 Python 回归测试、Python 编译和空白检查均已通过。
+
 ### 🔭 后续计划
 
-- 团队协作与远程任务观察；
-- 更完整的 Unity 隔离执行与验证环境。
+- Day19：更完整的 Unity 隔离执行与验证环境。
 
 ## 🤝 参与贡献
 
