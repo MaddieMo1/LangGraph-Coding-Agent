@@ -105,7 +105,7 @@ Expected: FAIL for missing `TaskObservationStore`.
 
 **Step 3: Implement the store**
 
-Use the runtime SQLite connection and `threading.RLock`. Create `observation_meta`, `observation_tasks`, and `observation_events` with `CREATE TABLE IF NOT EXISTS`. Use `INTEGER PRIMARY KEY AUTOINCREMENT` for cursor and a unique idempotency key. `append_projection()` validates all input before one transaction upserts the snapshot and appends missing events.
+Use the same SQLite database file as the runtime, but open independent short-lived connections through an injected connection factory so SSE threads never share LangGraph saver's live cursor or transaction. Protect schema initialization with `threading.RLock`, configure a bounded busy timeout, and create `observation_meta`, `observation_tasks`, and `observation_events` with `CREATE TABLE IF NOT EXISTS`. Use `INTEGER PRIMARY KEY AUTOINCREMENT` for cursor and a unique idempotency key. `append_projection()` validates all input before one transaction upserts the snapshot and appends missing events.
 
 Provide `get_task`, `list_tasks`, `list_events(after_cursor, limit)`, `cursor_bounds`, `prune`, `delete_threads`, and `get_or_create_instance_id`. SQL parameters must be bound, project scope mandatory, and page size bounded to 1–200.
 
