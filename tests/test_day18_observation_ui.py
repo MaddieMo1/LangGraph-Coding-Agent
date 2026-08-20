@@ -3,6 +3,7 @@ import unittest
 
 import gradio as gr
 from fastapi import APIRouter
+from starlette.testclient import TestClient
 
 from app import compose_application
 from ui.observation_app import (
@@ -95,6 +96,34 @@ class ObservationUiTests(unittest.TestCase):
         )
         self.assertLess(included_index, observation_index)
         self.assertLess(observation_index, root_index)
+
+    def test_remote_client_can_only_reach_the_observation_surface(self):
+        settings = ObservationSettings.from_environment({
+            "OBSERVATION_ENABLED": "true",
+            "OBSERVATION_READ_TOKEN": READ_TOKEN,
+        })
+        router = APIRouter()
+
+        @router.get("/observe/tasks")
+        def tasks():
+            return []
+
+        with gr.Blocks() as control:
+            gr.Markdown("control")
+        application = compose_application(
+            control,
+            observation_demo=build_observation_app(),
+            observation_router=router,
+            settings=settings,
+        )
+
+        remote = TestClient(application, client=("192.168.10.20", 50000))
+        self.assertEqual(200, remote.get("/observe/tasks").status_code)
+        self.assertEqual(403, remote.get("/").status_code)
+        self.assertEqual(403, remote.get("/docs").status_code)
+
+        local = TestClient(application, client=("127.0.0.1", 50000))
+        self.assertEqual(200, local.get("/").status_code)
 
 
 if __name__ == "__main__":

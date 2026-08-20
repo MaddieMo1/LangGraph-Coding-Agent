@@ -1,7 +1,8 @@
 import os
+import ipaddress
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 import gradio as gr
 import uvicorn
 
@@ -25,6 +26,35 @@ from workflow.runtime import WorkflowRuntime
 from workflow.task_observation import TaskObservationProjector
 
 
+class LocalControlOnlyMiddleware:
+    """Expose /observe remotely while keeping every control route loopback-only."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in {"http", "websocket"}:
+            path = str(scope.get("path") or "")
+            if not (path == "/observe" or path.startswith("/observe/")):
+                client = scope.get("client")
+                host = client[0] if client else ""
+                try:
+                    is_loopback = ipaddress.ip_address(host).is_loopback
+                except ValueError:
+                    is_loopback = host.lower() == "localhost"
+                if not is_loopback:
+                    if scope["type"] == "websocket":
+                        await send({"type": "websocket.close", "code": 1008})
+                    else:
+                        response = PlainTextResponse(
+                            "control interface is available from localhost only",
+                            status_code=403,
+                        )
+                        await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
+
+
 def configure_localhost_proxy_bypass():
     for name in ("NO_PROXY", "no_proxy"):
         entries = [item.strip() for item in os.getenv(name, "").split(",") if item.strip()]
@@ -44,6 +74,7 @@ def compose_application(
 
     settings = settings or ObservationSettings()
     application = FastAPI(title="LangGraph Unity Coding Agent")
+    application.add_middleware(LocalControlOnlyMiddleware)
     if settings.enabled and observation_router is not None and observation_demo is not None:
         application.include_router(observation_router)
 
