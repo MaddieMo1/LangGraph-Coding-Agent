@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 from html import escape
+import hashlib
+import json
 import re
 from zoneinfo import ZoneInfo
 
 import gradio as gr
 
 from project_version import __version__
+from tools.approval_policy import ApprovalPolicy
 from tools.unity_test_tool import is_test_assembly_compile_failure
 from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state
 
@@ -1984,8 +1987,59 @@ button#task-center-refresh:hover {
         height: auto;
     }
 }
-"""
 
+.approval-actor {
+    display: flex;
+    min-width: 190px;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 2px solid var(--deck-cyan);
+    padding-left: 10px;
+    color: var(--deck-text-muted);
+    font-size: 11px;
+}
+
+.approval-actor strong {
+    color: var(--deck-text);
+    font-size: 13px;
+}
+
+.approval-actor-label,
+.audit-sequence {
+    color: var(--deck-cyan);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.audit-timeline {
+    display: grid;
+    gap: 10px;
+}
+
+.audit-event {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 8px;
+    border-left: 1px solid var(--deck-line);
+    padding-left: 10px;
+}
+
+.audit-event strong,
+.audit-event span,
+.audit-event p {
+    display: block;
+    margin: 0;
+}
+
+.audit-event span,
+.audit-event p,
+.audit-empty {
+    color: var(--deck-text-muted);
+    font-size: 11px;
+}
+
+"""
 
 APPROVAL_JS = r"""
 (() => {
@@ -2318,6 +2372,49 @@ def format_topbar_context(thread_id, source):
         f'<span class="topbar-meta-value">{escape(source_label)}</span></div>'
         "</div>"
     )
+
+
+ROLE_LABELS = {
+    "viewer": "只读查看者",
+    "reviewer": "审查者",
+    "approver": "审批者",
+    "operator": "任务操作员",
+}
+
+
+def format_actor_badge(context):
+    role = str(context.get("role", "viewer") or "viewer")
+    actor_id = str(context.get("actor_id", "anonymous") or "anonymous")
+    capabilities = set(context.get("capabilities", []) or [])
+    permission = "可审批" if "approval.decide" in capabilities else "不可审批"
+    return (
+        '<div class="approval-actor">'
+        '<span class="approval-actor-label">当前身份</span>'
+        f'<strong>{escape(actor_id)}</strong>'
+        f'<span>{escape(ROLE_LABELS.get(role, role))} · {escape(permission)}</span>'
+        "</div>"
+    )
+
+
+def format_audit_timeline(events):
+    if not events:
+        return '<div class="audit-empty">当前任务暂无审计事件。</div>'
+    items = []
+    for event in sorted(events, key=lambda item: item.get("sequence", 0)):
+        items.append(
+            '<div class="audit-event">'
+            f'<span class="audit-sequence">#{escape(str(event.get("sequence", "")))}</span>'
+            '<div><strong>'
+            f'{escape(str(event.get("event_type", "")))}'
+            '</strong><span>'
+            f'{escape(str(event.get("actor_id", "")))} · '
+            f'{escape(str(event.get("role", "")))} · '
+            f'{escape(str(event.get("result", "")))}'
+            '</span>'
+            f'<p>{escape(str(event.get("note", "") or "—"))}</p></div>'
+            "</div>"
+        )
+    return '<div class="audit-timeline">' + "".join(items) + "</div>"
 
 
 def _unique_text(values):
@@ -3085,8 +3182,114 @@ def select_patch_diff(patches, patch_id):
 class ApprovalController:
     """Testable callbacks for starting, recovering, and deciding workflow reviews."""
 
-    def __init__(self, runtime):
+    def __init__(
+        self,
+        runtime,
+        approval_policy=None,
+        audit_store=None,
+        approval_store=None,
+    ):
         self.runtime = runtime
+        workflow = getattr(runtime, "workflow", None)
+        self.approval_policy = approval_policy or getattr(
+            workflow, "approval_policy", None
+        ) or ApprovalPolicy.from_environment({
+            "APPROVAL_ACTOR_ID": "legacy-local",
+            "APPROVAL_ACTOR_ROLE": "approver",
+        })
+        self.audit_store = audit_store or getattr(workflow, "approval_audit", None)
+        self.approval_store = approval_store or getattr(workflow, "approval_store", None)
+        self._enforce_policy = approval_policy is not None or workflow is not None
+
+    def actor_context(self):
+        context = self.approval_policy.context()
+        if not self._enforce_policy:
+            context["capabilities"] = sorted({
+                capability
+                for values in ApprovalPolicy.ROLE_CAPABILITIES.values()
+                for capability in values
+            })
+        return context
+
+    def audit_events(self, thread_id=""):
+        self._require("audit.read")
+        if self.audit_store is None:
+            return []
+        normalized_thread_id = str(thread_id or "").strip()
+        return [
+            event
+            for event in self.audit_store.list_events()
+            if not normalized_thread_id or event.get("thread_id") == normalized_thread_id
+        ]
+
+    def export_audit(self):
+        self._require("audit.export")
+        if self.audit_store is None:
+            return {"verified": True, "events": []}
+        return self.audit_store.export_verified()
+
+    def record_review(self, thread_id, bundle_id, patch_ids, note):
+        actor = self._require("approval.review")
+        if self.audit_store is None or self.approval_store is None:
+            raise ValueError("审批审计存储尚未就绪")
+        bundle = self.approval_store.get(bundle_id)
+        if bundle is None:
+            raise ValueError("当前审批包不存在")
+        selected = set(patch_ids or [])
+        known = {patch.get("patch_id") for patch in bundle.get("patches", [])}
+        if not selected.issubset(known):
+            raise ValueError("审查选择包含未知补丁")
+        files = [
+            {
+                "file": patch["file"],
+                "operation": patch["operation"],
+                "before_hash": patch["before_hash"],
+                "after_hash": patch["after_hash"],
+            }
+            for patch in bundle.get("patches", [])
+            if patch.get("patch_id") in selected
+        ]
+        identity = json.dumps(
+            {"patch_ids": sorted(selected), "note": str(note or "")},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.audit_store.append(
+            {
+                "event_type": "selection_recorded",
+                "thread_id": str(thread_id or "").strip(),
+                "bundle_id": bundle_id,
+                "source": bundle["source"],
+                "actor_id": actor.actor_id,
+                "role": actor.role,
+                "files": files,
+                "action": "review",
+                "result": "recorded",
+                "note": str(note or ""),
+                "error_code": "",
+            },
+            idempotency_key=(
+                f"selection:{thread_id}:{bundle_id}:{actor.actor_id}:"
+                f"{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
+            ),
+        )
+        return self.audit_events(thread_id)
+
+    def _require(self, capability):
+        if not self._enforce_policy:
+            return self.approval_policy.actor
+        return self.approval_policy.require(capability)
+
+    def _allows(self, capability):
+        return not self._enforce_policy or self.approval_policy.allows(capability)
+
+    def decorate_view(self, view):
+        decorated = dict(view)
+        decorated["actor"] = self.actor_context()
+        decorated["capabilities"] = list(decorated["actor"]["capabilities"])
+        thread_id = str(decorated.get("thread_id", "") or "")
+        decorated["audit_events"] = self.audit_events(thread_id) if thread_id else []
+        return decorated
 
     def start(self, query):
         if not isinstance(query, str) or not query.strip():
@@ -3179,6 +3382,7 @@ class ApprovalController:
         )
 
     def continue_active_task(self, thread_id):
+        self._require("task.operate")
         active_task = self.runtime.find_active_task()
         if active_task is None:
             raise ValueError("当前没有可继续的活动任务")
@@ -3186,6 +3390,7 @@ class ApprovalController:
         return self.reload(owner_thread_id)
 
     def continue_active_task_stream(self, thread_id):
+        self._require("task.operate")
         active_task = self.runtime.find_active_task()
         if active_task is None:
             raise ValueError("当前没有可继续的活动任务")
@@ -3201,6 +3406,7 @@ class ApprovalController:
             )
 
     def retry_baseline_compile_stream(self, thread_id):
+        self._require("task.operate")
         normalized_thread_id = thread_id.strip()
         if not normalized_thread_id:
             raise ValueError("当前没有可重新检查的 Unity 基线任务")
@@ -3229,6 +3435,7 @@ class ApprovalController:
             )
 
     def abandon_active_task(self, thread_id):
+        self._require("task.operate")
         normalized_thread_id = thread_id.strip()
         if not normalized_thread_id:
             raise ValueError("当前没有可放弃的活动任务")
@@ -3273,18 +3480,19 @@ class ApprovalController:
             )
             return view
         is_owner = view.get("thread_id") == active_task["thread_id"]
+        can_operate = self._allows("task.operate")
         view.update(
             {
                 "active_task_lock": True,
                 "active_thread_id": active_task["thread_id"],
-                "can_continue_active": is_owner and active_task.get("can_continue", False),
+                "can_continue_active": can_operate and is_owner and active_task.get("can_continue", False),
                 "can_retry_repair_active": (
-                    is_owner and active_task.get("can_retry_repair", False)
+                    can_operate and is_owner and active_task.get("can_retry_repair", False)
                 ),
                 "can_retry_baseline_active": (
-                    is_owner and active_task.get("can_retry_baseline", False)
+                    can_operate and is_owner and active_task.get("can_retry_baseline", False)
                 ),
-                "can_abandon_active": is_owner and active_task.get("can_abandon", False),
+                "can_abandon_active": can_operate and is_owner and active_task.get("can_abandon", False),
                 "active_updated_at": active_task.get("updated_at", ""),
             }
         )
@@ -3307,6 +3515,7 @@ class ApprovalController:
         return view
 
     def archive_dirty(self, thread_id):
+        self._require("task.operate")
         normalized_thread_id = thread_id.strip()
         if not normalized_thread_id:
             raise ValueError("当前没有可归档的失败任务")
@@ -3342,6 +3551,7 @@ class ApprovalController:
         return view
 
     def retry_test_generation_stream(self, thread_id):
+        self._require("task.operate")
         normalized_thread_id = thread_id.strip()
         if not normalized_thread_id:
             raise ValueError("当前没有可恢复的测试生成任务")
@@ -3371,6 +3581,7 @@ class ApprovalController:
             )
 
     def retry_failed_repair_stream(self, thread_id):
+        self._require("task.operate")
         normalized_thread_id = thread_id.strip()
         if not normalized_thread_id:
             raise ValueError("当前没有可重新修复的任务")
@@ -3458,12 +3669,14 @@ class ApprovalController:
         )
 
     def _decide(self, thread_id, decision):
+        self._require("approval.decide")
         if not decision.get("bundle_id"):
             raise ValueError("当前没有可审批的变更包")
         result = self.runtime.resume(thread_id, decision)
         return self._view_from_result(thread_id.strip(), result)
 
     def _decide_stream(self, thread_id, decision):
+        self._require("approval.decide")
         if not decision.get("bundle_id"):
             raise ValueError("当前没有可审批的变更包")
         normalized_thread_id = thread_id.strip()
@@ -3505,8 +3718,13 @@ class ApprovalController:
             "approval_history": [],
         }
 
+    def _view_from_result(self, thread_id, result, default_status="completed"):
+        return self.decorate_view(
+            self._base_view_from_result(thread_id, result, default_status)
+        )
+
     @classmethod
-    def _view_from_result(cls, thread_id, result, default_status="completed"):
+    def _base_view_from_result(cls, thread_id, result, default_status="completed"):
         request = cls._interrupt_request(result) or result.get("approval_request", {})
         approval_status = result.get("approval_status", request.get("status", ""))
         mapped_state = {
@@ -3867,6 +4085,7 @@ def build_approval_app(controller, initial_view=None):
         "can_abandon_active": False,
         "unity_knowledge": {},
     }
+    initial_view = controller.decorate_view(initial_view)
     initial_choices = patch_choices(initial_view["patches"])
     initial_patch = (
         initial_view["selected_patch_ids"][0]
@@ -3874,6 +4093,9 @@ def build_approval_app(controller, initial_view=None):
         else None
     )
     initial_pending = initial_view["status"] == "pending"
+    initial_capabilities = set(initial_view.get("capabilities", []))
+    initial_can_review = initial_pending and "approval.review" in initial_capabilities
+    initial_can_decide = initial_pending and "approval.decide" in initial_capabilities
     initial_layout = initial_view.get("view_state") or layout_for_mode(initial_view["status"])
     initial_tasks = format_task_choices(controller.list_tasks())
     initial_saved_tasks = controller.list_tasks()
@@ -3907,6 +4129,10 @@ def build_approval_app(controller, initial_view=None):
                 format_topbar_context(initial_view["thread_id"], initial_view["source"]),
                 elem_id="topbar-context",
                 scale=1,
+            )
+            gr.HTML(
+                format_actor_badge(initial_view["actor"]),
+                elem_id="approval-actor-badge",
             )
 
         with gr.Row(elem_id="workspace-grid") as workspace_grid:
@@ -4063,7 +4289,7 @@ def build_approval_app(controller, initial_view=None):
                                 choices=initial_choices,
                                 value=initial_view["selected_patch_ids"],
                                 info="所选文件将作为一个原子批次应用。",
-                                interactive=initial_pending,
+                                interactive=initial_can_review,
                                 elem_id="selected-patches",
                             )
                             selection_summary = gr.HTML(
@@ -4091,6 +4317,7 @@ def build_approval_app(controller, initial_view=None):
                     initial_layout["show_review"]
                     or initial_layout["show_git"]
                     or bool(initial_view.get("unity_knowledge"))
+                    or bool(initial_view.get("audit_events"))
                 ),
                 elem_id="right-inspector",
             ) as right_inspector:
@@ -4103,6 +4330,22 @@ def build_approval_app(controller, initial_view=None):
                         elem_id="unity-knowledge-info",
                         apply_default_css=False,
                     )
+                with gr.Group(
+                    visible=bool(initial_view.get("audit_events")),
+                    elem_id="audit-card",
+                ) as audit_card:
+                    gr.HTML('<div class="inspector-title">审批审计 · 只读</div>')
+                    audit_info = gr.HTML(
+                        format_audit_timeline(initial_view.get("audit_events", [])),
+                        elem_id="audit-timeline",
+                        apply_default_css=False,
+                    )
+                    export_audit = gr.Button(
+                        "查看已验证审计导出",
+                        size="sm",
+                        elem_id="export-approval-audit",
+                    )
+                    audit_export = gr.JSON(value=None, visible=False, label="已验证审计导出")
                 with gr.Group(visible=initial_layout["show_review"], elem_id="proposal-card") as proposal_card:
                     proposal_info = gr.HTML(
                         format_proposal_info(
@@ -4141,9 +4384,14 @@ def build_approval_app(controller, initial_view=None):
                         label="",
                         placeholder="记录批准原因、风险说明或后续处理建议…",
                         lines=8,
-                        interactive=initial_pending,
+                        interactive=initial_can_review,
                         show_label=False,
                         elem_id="approval-note",
+                    )
+                    record_review = gr.Button(
+                        "记录审查选择与备注",
+                        interactive=initial_can_review,
+                        elem_id="record-approval-review",
                     )
                     gr.HTML(
                         '<div class="safety-copy">'
@@ -4162,18 +4410,18 @@ def build_approval_app(controller, initial_view=None):
                 accept_all = gr.Button(
                     "批准全部并继续",
                     variant="primary",
-                    interactive=initial_pending,
+                    interactive=initial_can_decide,
                     elem_id="approve-all",
                 )
                 accept_selected = gr.Button(
                     "仅应用所选文件",
-                    interactive=initial_pending,
+                    interactive=initial_can_decide,
                     elem_id="approve-selected",
                 )
                 reject_all = gr.Button(
                     "拒绝本次提案",
                     variant="stop",
-                    interactive=initial_pending,
+                    interactive=initial_can_decide,
                     elem_id="reject-all",
                 )
 
@@ -4273,6 +4521,9 @@ def build_approval_app(controller, initial_view=None):
             choices = patch_choices(view["patches"])
             first = view["selected_patch_ids"][0] if view["selected_patch_ids"] else None
             pending = view["status"] == "pending"
+            capabilities = set(view.get("capabilities", []))
+            can_review = pending and "approval.review" in capabilities
+            can_decide = pending and "approval.decide" in capabilities
             layout = view.get("view_state") or layout_for_mode(view["status"])
             show_execution = layout["show_validation"] or layout["mode"] in {"preflight", "running"}
             tasks = list(tasks if tasks is not None else controller.list_tasks())
@@ -4336,6 +4587,8 @@ def build_approval_app(controller, initial_view=None):
                 ),
                 format_unity_knowledge(view.get("unity_knowledge", {})),
                 gr.update(visible=bool(view.get("unity_knowledge"))),
+                format_audit_timeline(view.get("audit_events", [])),
+                gr.update(visible=bool(view.get("audit_events"))),
                 format_proposal_info(view["source"], view["thread_id"], view["patches"]),
                 format_repair_context(view.get("repair_context", {})),
                 gr.update(
@@ -4354,14 +4607,15 @@ def build_approval_app(controller, initial_view=None):
                 gr.update(
                     choices=choices,
                     value=view["selected_patch_ids"],
-                    interactive=pending,
+                    interactive=can_review,
                 ),
                 format_selection_summary(view["selected_patch_ids"], len(view["patches"])),
                 view["diff"],
-                gr.update(value="", interactive=pending),
-                gr.update(interactive=pending),
-                gr.update(interactive=pending),
-                gr.update(interactive=pending),
+                gr.update(value="", interactive=can_review),
+                gr.update(interactive=can_review),
+                gr.update(interactive=can_decide),
+                gr.update(interactive=can_decide),
+                gr.update(interactive=can_decide),
                 gr.update(
                     choices=format_task_choices(tasks),
                     value=view["thread_id"] or None,
@@ -4374,6 +4628,7 @@ def build_approval_app(controller, initial_view=None):
                         layout["show_review"]
                         or layout["show_git"]
                         or bool(view.get("unity_knowledge"))
+                        or bool(view.get("audit_events"))
                     )
                 ),
                 gr.update(visible=layout["show_review"]),
@@ -4403,6 +4658,8 @@ def build_approval_app(controller, initial_view=None):
             review_meta,
             unity_knowledge_info,
             unity_knowledge_card,
+            audit_info,
+            audit_card,
             proposal_info,
             repair_context_info,
             repair_context_card,
@@ -4414,6 +4671,7 @@ def build_approval_app(controller, initial_view=None):
             selection_summary,
             diff,
             note,
+            record_review,
             accept_all,
             accept_selected,
             reject_all,
@@ -4797,6 +5055,18 @@ def build_approval_app(controller, initial_view=None):
             ):
                 yield render(view)
 
+        def record_review_view(current_thread_id, bundle_id, patch_ids, approval_note):
+            events = controller.record_review(
+                current_thread_id,
+                bundle_id,
+                patch_ids,
+                approval_note,
+            )
+            return format_audit_timeline(events), gr.update(visible=True)
+
+        def export_audit_view():
+            return gr.update(value=controller.export_audit(), visible=True)
+
         start_button.click(start_view, query, outputs)
         query.submit(start_view, query, outputs)
         reload_button.click(reload_view, recovery_task, outputs)
@@ -4829,10 +5099,27 @@ def build_approval_app(controller, initial_view=None):
         selected_patches.change(
             lambda selected, patches: (
                 format_selection_summary(selected, len(patches or [])),
-                gr.update(interactive=bool(selected)),
+                gr.update(
+                    interactive=(
+                        bool(selected)
+                        and "approval.decide"
+                        in set(controller.actor_context().get("capabilities", []))
+                    )
+                ),
             ),
             [selected_patches, patches_state],
             [selection_summary, accept_selected],
+        )
+        record_review.click(
+            record_review_view,
+            [thread_id, bundle_state, selected_patches, note],
+            [audit_info, audit_card],
+            show_progress="hidden",
+        )
+        export_audit.click(
+            export_audit_view,
+            outputs=audit_export,
+            show_progress="hidden",
         )
         accept_all.click(
             accept_all_view,

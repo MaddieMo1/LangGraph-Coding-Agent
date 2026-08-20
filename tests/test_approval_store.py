@@ -181,6 +181,16 @@ class ApprovalStoreTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "approval history"):
             ApprovalStore(self.path)
 
+    def test_restores_a_valid_bundle_snapshot_atomically(self):
+        created = self.store.create_bundle("coder", [patch_for("A.cs")])
+        patch_id = created["patches"][0]["patch_id"]
+        self.store.finalize(created["bundle_id"], "approved", "batch", [patch_id])
+
+        restored = self.store.restore_bundle(created)
+
+        self.assertEqual("pending", restored["status"])
+        self.assertEqual(created, ApprovalStore(self.path).get(created["bundle_id"]))
+
 
 if __name__ == "__main__":
     unittest.main()

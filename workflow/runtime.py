@@ -59,12 +59,15 @@ class WorkflowRuntime:
         return str(uuid.uuid4())
 
     def invoke(self, state, thread_id):
-        return self._require_open().invoke(state, config=self._config(thread_id))
+        return self._require_open().invoke(
+            {**state, "thread_id": thread_id},
+            config=self._config(thread_id),
+        )
 
     def stream(self, state, thread_id):
         """Yield durable workflow snapshots as each graph node completes."""
         yield from self._require_open().stream(
-            state,
+            {**state, "thread_id": thread_id},
             config=self._config(thread_id),
             stream_mode="values",
         )
