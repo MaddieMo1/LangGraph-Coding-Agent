@@ -1254,6 +1254,26 @@ body {
     background: transparent !important;
 }
 
+#observation-nav { min-width: auto !important; }
+
+#observation-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 88px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 6px;
+    color: #8192a8 !important;
+    font-size: 14px;
+    text-decoration: none !important;
+}
+
+#observation-nav a:hover {
+    color: var(--deck-cyan) !important;
+    background: rgba(49, 215, 231, .08) !important;
+}
+
 #primary-navigation button.primary,
 #primary-navigation button:hover {
     color: var(--deck-cyan) !important;
@@ -4051,7 +4071,7 @@ class ApprovalController:
         return messages.get(status, f"工作流状态：{status}")
 
 
-def build_approval_app(controller, initial_view=None):
+def build_approval_app(controller, initial_view=None, observation_enabled=False):
     initial_view = initial_view or controller.active_task_view() or {
         "thread_id": "",
         "bundle_id": "",
@@ -4117,6 +4137,12 @@ def build_approval_app(controller, initial_view=None):
             with gr.Row(elem_id="primary-navigation"):
                 workspace_nav = gr.Button("工作台", size="sm", variant="primary", elem_id="workspace-nav")
                 task_center_nav = gr.Button("任务中心", size="sm", elem_id="task-center-nav")
+                gr.HTML(
+                    '<a href="/observe/ui/" target="_blank" '
+                    'rel="noopener noreferrer">团队观察</a>',
+                    visible=observation_enabled,
+                    elem_id="observation-nav",
+                )
             module_lockup = gr.HTML(
                 format_module_lockup(initial_view["status"]),
                 elem_id="module-lockup",

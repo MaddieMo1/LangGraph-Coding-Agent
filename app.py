@@ -109,7 +109,10 @@ def compose_application(
 
 def create_application(runtime, settings=None):
     settings = settings or ObservationSettings.from_environment()
-    control_demo = build_approval_app(ApprovalController(runtime))
+    control_demo = build_approval_app(
+        ApprovalController(runtime),
+        observation_enabled=settings.enabled,
+    )
     if not settings.enabled:
         return compose_application(control_demo, settings=settings)
 

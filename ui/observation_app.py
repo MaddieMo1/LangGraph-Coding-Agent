@@ -54,7 +54,7 @@ body, .gradio-container { background: #07101d !important; color: #e6eef8 !import
 OBSERVATION_HTML = """
 <div class="observation-shell">
   <section class="observation-header">
-    <div class="observation-label">Day18 · Team Observation</div>
+    <div class="observation-label">TEAM OBSERVATION · READ ONLY</div>
     <h1>团队只读观察</h1>
     <p>该页面只能查看脱敏任务状态，不能审批、重试、取消或操作 Git。</p>
     <div class="observation-login" id="observation-login">

@@ -19,6 +19,10 @@ READ_TOKEN = "day18-read-only-token-with-at-least-32-chars"
 
 
 class ObservationUiTests(unittest.TestCase):
+    def test_observation_page_uses_the_permanent_product_label(self):
+        self.assertIn("TEAM OBSERVATION · READ ONLY", OBSERVATION_HTML)
+        self.assertNotIn("Day18 · Team Observation", OBSERVATION_HTML)
+
     def test_observation_page_renders_the_read_only_status_fields(self):
         config = build_observation_app().get_config_file()
         rendered = json.dumps(config, ensure_ascii=False)
