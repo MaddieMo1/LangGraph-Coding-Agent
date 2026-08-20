@@ -161,7 +161,7 @@ OBSERVATION_JS = r"""
     tasks.forEach((task) => {
       const option = document.createElement("option");
       option.value = task.thread_id;
-      option.textContent = `${task.status} · ${task.current_gate} · ${task.thread_id.slice(0, 8)}`;
+      option.textContent = `${task.status} · ${task.task_name || "未命名任务"} · ${task.thread_id.slice(0, 8)}`;
       select.appendChild(option);
     });
     if (tasks.length) await openStream(tasks[0].thread_id);

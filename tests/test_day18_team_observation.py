@@ -137,8 +137,9 @@ class TeamObservationIntegrationTests(unittest.TestCase):
         }, "thread-1")
         exported = self.reader.export("thread-1")
         serialized = json.dumps(exported, ensure_ascii=False)
+        self.assertTrue(exported["snapshot"]["task_name"].startswith("生成 Secret.cs"))
+        self.assertLessEqual(len(exported["snapshot"]["task_name"]), 32)
         for forbidden in (
-            "生成 Secret.cs",
             "never-expose",
             "class Secret",
             '"query"',

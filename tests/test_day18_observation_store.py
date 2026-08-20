@@ -36,6 +36,7 @@ class TaskObservationStoreTests(unittest.TestCase):
             "schema_version": 1,
             "project_id": PROJECT_ID,
             "thread_id": thread_id,
+            "task_name": "生成玩家控制器",
             "status": status,
             "current_gate": "coder",
             "started_at": NOW,

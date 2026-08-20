@@ -25,6 +25,7 @@ PUBLIC_SNAPSHOT_KEYS = {
     "schema_version",
     "project_id",
     "thread_id",
+    "task_name",
     "status",
     "current_gate",
     "started_at",
@@ -109,6 +110,18 @@ def _sanitize_text(value, limit=240):
     text = POSIX_PATH_PATTERN.sub("[PATH]", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
+
+
+def sanitize_task_name(values):
+    values = values if isinstance(values, dict) else {}
+    requirement_contract = values.get("requirement_contract", {}) or {}
+    goal = (
+        requirement_contract.get("goal", "")
+        if isinstance(requirement_contract, dict)
+        else ""
+    )
+    name = _sanitize_text(goal or values.get("query", ""), limit=32)
+    return name or "未命名任务"
 
 
 def sanitize_diagnostic(result):
@@ -251,6 +264,7 @@ def sanitize_task_snapshot(values, context):
         "schema_version": SCHEMA_VERSION,
         "project_id": project_id,
         "thread_id": sanitize_identifier(context.get("thread_id"), "thread_id"),
+        "task_name": sanitize_task_name(values),
         "status": _status(values, context),
         "current_gate": current_gate,
         "started_at": _validated_timestamp(context.get("started_at"), "started_at"),

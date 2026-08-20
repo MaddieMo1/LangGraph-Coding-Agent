@@ -60,6 +60,7 @@ class TaskObservationProjectorTests(unittest.TestCase):
         result = self.project("checkpoint-1", self.values())
         self.assertEqual(["task_started", "gate_entered"], [item["event_type"] for item in result["events"]])
         self.assertEqual("local-operator", result["snapshot"]["owner_actor_id"])
+        self.assertEqual("生成 Player.cs", result["snapshot"]["task_name"])
         self.assertEqual(2, result["latest_cursor"])
 
     def test_gate_change_emits_ordered_events_without_source_bodies(self):
@@ -153,6 +154,7 @@ class TaskObservationProjectorTests(unittest.TestCase):
             started_at=NOW,
         )
         self.assertEqual("running", result["snapshot"]["status"])
+        self.assertEqual("未命名任务", result["snapshot"]["task_name"])
 
 
 if __name__ == "__main__":

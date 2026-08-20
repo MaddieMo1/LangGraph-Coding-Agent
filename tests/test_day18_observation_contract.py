@@ -8,6 +8,7 @@ from memory.task_observation import (
     sanitize_artifact,
     sanitize_diagnostic,
     sanitize_identifier,
+    sanitize_task_name,
     sanitize_task_snapshot,
     validate_event,
 )
@@ -55,8 +56,9 @@ class ObservationContractTests(unittest.TestCase):
         snapshot = sanitize_task_snapshot(self.state(), self.context())
         self.assertEqual(PUBLIC_SNAPSHOT_KEYS, set(snapshot))
         serialized = json.dumps(snapshot, ensure_ascii=False)
+        self.assertEqual("生成 Player.cs，密钥 [REDACTED]", snapshot["task_name"])
         for forbidden in (
-            "生成 Player.cs",
+            "API_KEY=top-secret",
             "top-secret",
             "Bearer secret",
             "C:\\private",
@@ -73,6 +75,26 @@ class ObservationContractTests(unittest.TestCase):
         self.assertEqual(2, snapshot["gates"]["test_passed_count"])
         self.assertEqual("report.xml", snapshot["artifacts"]["test_report"])
         self.assertEqual("b" * 40, snapshot["artifacts"]["git_commit_hash"])
+
+    def test_task_name_prefers_requirement_goal_and_is_bounded(self):
+        name = sanitize_task_name({
+            "query": "这个旧查询不应优先",
+            "requirement_contract": {
+                "goal": "创建中文背包物品管理系统并增加拖拽、堆叠、分类和持久化功能",
+            },
+        })
+        self.assertTrue(name.startswith("创建中文背包物品管理系统"))
+        self.assertLessEqual(len(name), 32)
+        self.assertNotIn("旧查询", name)
+
+    def test_task_name_redacts_sensitive_text_and_supports_legacy_query(self):
+        name = sanitize_task_name({
+            "query": "修复玩家系统 API_KEY=top-secret 位于 C:\\private\\Player.cs",
+        })
+        self.assertIn("修复玩家系统", name)
+        self.assertNotIn("top-secret", name)
+        self.assertNotIn("C:\\private", name)
+        self.assertEqual("未命名任务", sanitize_task_name({"current_agent": "coordinator"}))
 
     def test_diagnostic_redacts_secrets_and_paths(self):
         result = sanitize_diagnostic({

@@ -80,6 +80,11 @@ class ObservationUiTests(unittest.TestCase):
         ):
             self.assertIn(expected_rule, OBSERVATION_CSS)
 
+    def test_task_selector_uses_readable_name_and_keeps_short_diagnostic_id(self):
+        self.assertIn('task.task_name || "未命名任务"', OBSERVATION_JS)
+        self.assertIn("task.thread_id.slice(0, 8)", OBSERVATION_JS)
+        self.assertNotIn("task.current_gate} · ${task.thread_id", OBSERVATION_JS)
+
     def test_read_routes_are_registered_before_gradio_mounts(self):
         settings = ObservationSettings.from_environment({
             "OBSERVATION_ENABLED": "true",
