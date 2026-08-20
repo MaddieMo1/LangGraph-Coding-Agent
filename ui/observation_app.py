@@ -29,6 +29,8 @@ body, .gradio-container { background: #07101d !important; color: #e6eef8 !import
 .observation-shell { max-width: 1180px; margin: 0 auto; padding: 28px; font-family: Inter, "Segoe UI", sans-serif; }
 .observation-header, .observation-card { border: 1px solid #203047; border-radius: 16px; background: #0b1626; }
 .observation-header { padding: 22px; margin-bottom: 16px; }
+.observation-header h1 { color: #f4f8ff !important; }
+.observation-header p { color: #b8c6d9 !important; }
 .observation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .observation-card { padding: 16px; min-height: 88px; }
 .observation-label { color: #8292a8; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
@@ -36,7 +38,9 @@ body, .gradio-container { background: #07101d !important; color: #e6eef8 !import
 .observation-login { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .observation-login[hidden] { display: none; }
 .observation-login input, .observation-login button, #observation-task-select { border: 1px solid #35506f; border-radius: 10px; padding: 10px 12px; background: #081321; color: #e6eef8; }
+.observation-login input::placeholder { color: #9aabc0; opacity: 1; }
 .observation-login button { border-color: #31d7e7; color: #31d7e7; cursor: pointer; }
+#observation-login-error { min-height: 20px; margin-top: 8px; color: #ff9aa8 !important; }
 #observation-dashboard[hidden] { display: none; }
 """
 

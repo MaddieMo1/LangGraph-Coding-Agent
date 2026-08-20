@@ -60,6 +60,15 @@ class ObservationUiTests(unittest.TestCase):
         self.assertNotIn("localStorage", browser_code)
         self.assertNotIn("?token=", browser_code)
 
+    def test_observation_header_and_login_feedback_use_explicit_contrast_colors(self):
+        for expected_rule in (
+            ".observation-header h1 { color: #f4f8ff !important; }",
+            ".observation-header p { color: #b8c6d9 !important; }",
+            ".observation-login input::placeholder { color: #9aabc0; opacity: 1; }",
+            "#observation-login-error { min-height: 20px; margin-top: 8px; color: #ff9aa8 !important; }",
+        ):
+            self.assertIn(expected_rule, OBSERVATION_CSS)
+
     def test_read_routes_are_registered_before_gradio_mounts(self):
         settings = ObservationSettings.from_environment({
             "OBSERVATION_ENABLED": "true",
