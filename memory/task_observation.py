@@ -1,9 +1,13 @@
 """Sanitized, versioned contracts for read-only task observation."""
 
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
+import sqlite3
+import threading
+import uuid
 
 
 SCHEMA_VERSION = 1
@@ -76,6 +80,9 @@ class ObservationContractError(ValueError):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
+
+
+_SCHEMA_LOCK = threading.RLock()
 
 
 def utc_now():
@@ -310,3 +317,344 @@ def validate_event(event):
 def semantic_fingerprint(value):
     canonical = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class TaskObservationStore:
+    """Project-scoped derived observation state in the workflow SQLite file."""
+
+    def __init__(
+        self,
+        database_path,
+        project_id,
+        clock=None,
+        retention_days=7,
+        max_events=5000,
+        busy_timeout_ms=1500,
+        connection_factory=sqlite3.connect,
+    ):
+        self.database_path = str(database_path)
+        self.project_id = str(project_id or "").strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", self.project_id):
+            raise ObservationContractError(
+                "OBSERVATION_PROJECT_INVALID", "project_id must be a SHA-256 fingerprint"
+            )
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.retention_days = max(1, int(retention_days))
+        self.max_events = max(1, int(max_events))
+        self.busy_timeout_ms = max(0, int(busy_timeout_ms))
+        self.connection_factory = connection_factory
+        with _SCHEMA_LOCK:
+            self._initialize()
+
+    def _connect(self):
+        connection = self.connection_factory(
+            self.database_path,
+            timeout=self.busy_timeout_ms / 1000,
+            check_same_thread=False,
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
+        return connection
+
+    @contextmanager
+    def _connection(self):
+        connection = self._connect()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _initialize(self):
+        with self._connection() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS observation_meta (
+                    project_id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, key)
+                );
+                CREATE TABLE IF NOT EXISTS observation_tasks (
+                    project_id TEXT NOT NULL,
+                    thread_id TEXT NOT NULL,
+                    checkpoint_id TEXT NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (project_id, thread_id)
+                );
+                CREATE TABLE IF NOT EXISTS observation_events (
+                    cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT NOT NULL,
+                    thread_id TEXT NOT NULL,
+                    checkpoint_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    event_json TEXT NOT NULL,
+                    UNIQUE (project_id, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS observation_events_task_cursor
+                    ON observation_events(project_id, thread_id, cursor);
+                CREATE INDEX IF NOT EXISTS observation_events_project_time
+                    ON observation_events(project_id, occurred_at);
+                """
+            )
+
+    def append_projection(self, snapshot, events):
+        validate_snapshot(snapshot)
+        if snapshot["project_id"] != self.project_id:
+            raise ObservationContractError(
+                "OBSERVATION_PROJECT_MISMATCH", "snapshot belongs to another project"
+            )
+        normalized_events = []
+        for event in events or []:
+            validate_event(event)
+            if (
+                event["project_id"] != self.project_id
+                or event["thread_id"] != snapshot["thread_id"]
+            ):
+                raise ObservationContractError(
+                    "OBSERVATION_SCOPE_MISMATCH", "event and snapshot scopes differ"
+                )
+            normalized_events.append(event)
+
+        snapshot_json = _canonical_json(snapshot)
+        checkpoint_id = (
+            normalized_events[-1]["checkpoint_id"] if normalized_events else "snapshot-only"
+        )
+        inserted = []
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for event in normalized_events:
+                    event_json = _canonical_json(event)
+                    existing = connection.execute(
+                        """
+                        SELECT cursor, event_json FROM observation_events
+                        WHERE project_id = ? AND idempotency_key = ?
+                        """,
+                        (self.project_id, event["idempotency_key"]),
+                    ).fetchone()
+                    if existing is not None and existing["event_json"] != event_json:
+                        raise ObservationContractError(
+                            "OBSERVATION_IDEMPOTENCY_CONFLICT",
+                            "an observation idempotency key has conflicting semantics",
+                        )
+
+                connection.execute(
+                    """
+                    INSERT INTO observation_tasks(
+                        project_id, thread_id, checkpoint_id, snapshot_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(project_id, thread_id) DO UPDATE SET
+                        checkpoint_id = excluded.checkpoint_id,
+                        snapshot_json = excluded.snapshot_json,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        self.project_id,
+                        snapshot["thread_id"],
+                        checkpoint_id,
+                        snapshot_json,
+                        snapshot["updated_at"],
+                    ),
+                )
+                for event in normalized_events:
+                    event_json = _canonical_json(event)
+                    cursor = connection.execute(
+                        """
+                        SELECT cursor FROM observation_events
+                        WHERE project_id = ? AND idempotency_key = ?
+                        """,
+                        (self.project_id, event["idempotency_key"]),
+                    ).fetchone()
+                    if cursor is None:
+                        result = connection.execute(
+                            """
+                            INSERT INTO observation_events(
+                                project_id, thread_id, checkpoint_id, event_type,
+                                occurred_at, idempotency_key, event_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                self.project_id,
+                                event["thread_id"],
+                                event["checkpoint_id"],
+                                event["event_type"],
+                                event["occurred_at"],
+                                event["idempotency_key"],
+                                event_json,
+                            ),
+                        )
+                        inserted.append(result.lastrowid)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            latest = connection.execute(
+                "SELECT COALESCE(MAX(cursor), 0) FROM observation_events WHERE project_id = ?",
+                (self.project_id,),
+            ).fetchone()[0]
+        return {"success": True, "inserted_cursors": inserted, "latest_cursor": latest}
+
+    def get_task(self, project_id, thread_id):
+        normalized_project = self._scope(project_id)
+        normalized_thread = sanitize_identifier(thread_id, "thread_id")
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT snapshot_json FROM observation_tasks
+                WHERE project_id = ? AND thread_id = ?
+                """,
+                (normalized_project, normalized_thread),
+            ).fetchone()
+        return json.loads(row["snapshot_json"]) if row is not None else None
+
+    def list_tasks(self, project_id, limit=100):
+        normalized_project = self._scope(project_id)
+        bounded_limit = _bounded_limit(limit)
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT snapshot_json FROM observation_tasks
+                WHERE project_id = ? ORDER BY updated_at DESC LIMIT ?
+                """,
+                (normalized_project, bounded_limit),
+            ).fetchall()
+        return [json.loads(row["snapshot_json"]) for row in rows]
+
+    def list_events(self, project_id, thread_id, after_cursor=0, limit=100):
+        normalized_project = self._scope(project_id)
+        normalized_thread = sanitize_identifier(thread_id, "thread_id")
+        bounded_limit = _bounded_limit(limit)
+        try:
+            cursor = max(0, int(after_cursor))
+        except (TypeError, ValueError) as error:
+            raise ObservationContractError(
+                "OBSERVATION_CURSOR_INVALID", "cursor must be a non-negative integer"
+            ) from error
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT cursor, event_json FROM observation_events
+                WHERE project_id = ? AND thread_id = ? AND cursor > ?
+                ORDER BY cursor ASC LIMIT ?
+                """,
+                (normalized_project, normalized_thread, cursor, bounded_limit),
+            ).fetchall()
+        return [{"cursor": row["cursor"], **json.loads(row["event_json"])} for row in rows]
+
+    def cursor_bounds(self, project_id, thread_id):
+        normalized_project = self._scope(project_id)
+        normalized_thread = sanitize_identifier(thread_id, "thread_id")
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT COALESCE(MIN(cursor), 0), COALESCE(MAX(cursor), 0)
+                FROM observation_events WHERE project_id = ? AND thread_id = ?
+                """,
+                (normalized_project, normalized_thread),
+            ).fetchone()
+        return {"oldest_cursor": row[0], "latest_cursor": row[1]}
+
+    def prune(self):
+        now = self.clock()
+        if isinstance(now, str):
+            now = datetime.fromisoformat(now.replace("Z", "+00:00"))
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        cutoff = (now.astimezone(timezone.utc) - timedelta(days=self.retention_days)).isoformat()
+        with self._connection() as connection:
+            before = connection.execute(
+                "SELECT COUNT(*) FROM observation_events WHERE project_id = ?",
+                (self.project_id,),
+            ).fetchone()[0]
+            connection.execute(
+                "DELETE FROM observation_events WHERE project_id = ? AND occurred_at < ?",
+                (self.project_id, cutoff),
+            )
+            connection.execute(
+                """
+                DELETE FROM observation_events
+                WHERE project_id = ? AND cursor NOT IN (
+                    SELECT cursor FROM observation_events
+                    WHERE project_id = ? ORDER BY cursor DESC LIMIT ?
+                )
+                """,
+                (self.project_id, self.project_id, self.max_events),
+            )
+            after = connection.execute(
+                "SELECT COUNT(*) FROM observation_events WHERE project_id = ?",
+                (self.project_id,),
+            ).fetchone()[0]
+        return {"success": True, "deleted": before - after, "remaining": after}
+
+    def delete_threads(self, project_id, thread_ids):
+        normalized_project = self._scope(project_id)
+        normalized = list(
+            dict.fromkeys(sanitize_identifier(value, "thread_id") for value in thread_ids or [])
+        )
+        if not normalized:
+            return {"success": True, "deleted_tasks": 0, "deleted_events": 0}
+        placeholders = ",".join("?" for _ in normalized)
+        parameters = (normalized_project, *normalized)
+        with self._connection() as connection:
+            deleted_events = connection.execute(
+                f"DELETE FROM observation_events WHERE project_id = ? AND thread_id IN ({placeholders})",
+                parameters,
+            ).rowcount
+            deleted_tasks = connection.execute(
+                f"DELETE FROM observation_tasks WHERE project_id = ? AND thread_id IN ({placeholders})",
+                parameters,
+            ).rowcount
+        return {
+            "success": True,
+            "deleted_tasks": deleted_tasks,
+            "deleted_events": deleted_events,
+        }
+
+    def get_or_create_instance_id(self):
+        key = "instance_id"
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM observation_meta WHERE project_id = ? AND key = ?",
+                (self.project_id, key),
+            ).fetchone()
+            if row is not None:
+                return row["value"]
+            value = f"instance-{uuid.uuid4().hex}"
+            connection.execute(
+                """
+                INSERT INTO observation_meta(project_id, key, value, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (self.project_id, key, value, utc_now()),
+            )
+            return value
+
+    def _scope(self, project_id):
+        normalized = str(project_id or "").strip().lower()
+        return normalized if normalized == self.project_id else ""
+
+
+def _canonical_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _bounded_limit(limit):
+    try:
+        normalized = int(limit)
+    except (TypeError, ValueError) as error:
+        raise ObservationContractError(
+            "OBSERVATION_LIMIT_INVALID", "limit must be between 1 and 200"
+        ) from error
+    if normalized < 1 or normalized > 200:
+        raise ObservationContractError(
+            "OBSERVATION_LIMIT_INVALID", "limit must be between 1 and 200"
+        )
+    return normalized
