@@ -405,7 +405,7 @@ class TaskObservationStore:
                 """
             )
 
-    def append_projection(self, snapshot, events):
+    def append_projection(self, snapshot, events, checkpoint_id=""):
         validate_snapshot(snapshot)
         if snapshot["project_id"] != self.project_id:
             raise ObservationContractError(
@@ -424,9 +424,10 @@ class TaskObservationStore:
             normalized_events.append(event)
 
         snapshot_json = _canonical_json(snapshot)
-        checkpoint_id = (
+        checkpoint_id = str(checkpoint_id or "").strip() or (
             normalized_events[-1]["checkpoint_id"] if normalized_events else "snapshot-only"
         )
+        sanitize_identifier(checkpoint_id, "checkpoint_id")
         inserted = []
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
