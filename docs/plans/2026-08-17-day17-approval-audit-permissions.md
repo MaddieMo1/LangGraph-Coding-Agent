@@ -324,7 +324,7 @@ Commit: `docs: 添加 Day17 审批审计使用说明`
 
 **Files:**
 - Modify: `README.md`
-- Modify: `C:/Users/admin/memory/projects/ai-coding-agent.md` (local project record only)
+- Modify: `~/memory/projects/ai-coding-agent.md` (local project record only)
 
 **Step 1: Run focused Day17 tests**
 
