@@ -7,6 +7,7 @@ from starlette.testclient import TestClient
 
 from app import compose_application
 from ui.observation_app import (
+    OBSERVATION_CSS,
     OBSERVATION_HTML,
     OBSERVATION_JS,
     ObservationSettings,
@@ -52,6 +53,7 @@ class ObservationUiTests(unittest.TestCase):
 
     def test_browser_code_uses_cookie_session_sse_and_forgets_the_read_token(self):
         browser_code = OBSERVATION_HTML + OBSERVATION_JS
+        self.assertIn(".observation-login[hidden]", OBSERVATION_CSS)
         self.assertIn("new EventSource", browser_code)
         self.assertIn("sessionStorage", browser_code)
         self.assertIn("tokenInput.value = ''", browser_code)

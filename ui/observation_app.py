@@ -34,6 +34,7 @@ body, .gradio-container { background: #07101d !important; color: #e6eef8 !import
 .observation-label { color: #8292a8; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
 .observation-value { margin-top: 8px; color: #e6eef8; overflow-wrap: anywhere; }
 .observation-login { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.observation-login[hidden] { display: none; }
 .observation-login input, .observation-login button, #observation-task-select { border: 1px solid #35506f; border-radius: 10px; padding: 10px 12px; background: #081321; color: #e6eef8; }
 .observation-login button { border-color: #31d7e7; color: #31d7e7; cursor: pointer; }
 #observation-dashboard[hidden] { display: none; }
