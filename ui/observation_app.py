@@ -3,12 +3,19 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import asyncio
 import hashlib
 import hmac
+import inspect
+import json
 import os
 import re
 import secrets
 import sqlite3
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 from memory.task_observation import ObservationContractError, sanitize_identifier
 
@@ -316,6 +323,145 @@ class ObservationReader:
         }
 
 
+class _SessionRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
+    display_name: str = Field(default="", max_length=200)
+
+
+class _HeartbeatRequest(BaseModel):
+    thread_id: str = Field(min_length=1, max_length=128)
+
+
+def create_observation_router(reader, sessions, settings, waiter=None):
+    """Build a one-way API router with no workflow mutation dependency."""
+
+    router = APIRouter()
+    wait = waiter or asyncio.sleep
+
+    def require_session(request):
+        token = request.cookies.get(SESSION_COOKIE, "")
+        session = sessions.get(token) if token else None
+        if session is None:
+            raise HTTPException(status_code=401, detail="observer session is invalid")
+        return token, session
+
+    @router.post("/observe/session")
+    def create_session(payload: _SessionRequest):
+        if not settings.enabled:
+            raise HTTPException(status_code=404, detail="observation is disabled")
+        try:
+            session = sessions.create(payload.token, payload.display_name)
+        except ObservationSecurityError as error:
+            raise HTTPException(status_code=401, detail=error.code) from error
+        response = JSONResponse({
+            "observer_id": session["observer_id"],
+            "display_name": session["display_name"],
+            "expires_at": session["expires_at"],
+        })
+        response.set_cookie(
+            SESSION_COOKIE,
+            session["session_token"],
+            max_age=settings.session_ttl_seconds,
+            httponly=True,
+            secure=bool(settings.tls_certfile),
+            samesite="strict",
+            path="/observe",
+        )
+        return response
+
+    @router.get("/observe/tasks")
+    def list_tasks(request: Request):
+        require_session(request)
+        return reader.list_tasks()
+
+    @router.get("/observe/tasks/{thread_id}/snapshot")
+    def task_snapshot(thread_id: str, request: Request):
+        require_session(request)
+        snapshot = reader.get_snapshot(thread_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="task is unavailable")
+        return snapshot
+
+    @router.get("/observe/tasks/{thread_id}/export")
+    def task_export(thread_id: str, request: Request):
+        require_session(request)
+        exported = reader.export(thread_id)
+        if exported is None:
+            raise HTTPException(status_code=404, detail="task is unavailable")
+        return exported
+
+    @router.get("/observe/tasks/{thread_id}/events")
+    def task_events(thread_id: str, request: Request):
+        require_session(request)
+        snapshot = reader.get_snapshot(thread_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="task is unavailable")
+        raw_cursor = request.headers.get("last-event-id", "0") or "0"
+        try:
+            requested_cursor = int(raw_cursor)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Last-Event-ID is invalid") from error
+        if requested_cursor < 0:
+            raise HTTPException(status_code=400, detail="Last-Event-ID is invalid")
+
+        async def event_stream():
+            cursor = requested_cursor
+            bounds = reader.cursor_bounds(thread_id)
+            oldest = bounds["oldest_cursor"]
+            latest = bounds["latest_cursor"]
+            if cursor > latest:
+                cursor = latest
+                yield _sse_frame(
+                    "cursor_reset",
+                    {"latest_cursor": latest, "snapshot": snapshot},
+                    cursor,
+                )
+            elif cursor > 0 and oldest > 0 and cursor < oldest - 1:
+                cursor = oldest - 1
+                yield _sse_frame(
+                    "snapshot_reset",
+                    {"next_cursor": cursor, "snapshot": snapshot},
+                    cursor,
+                )
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                page = reader.list_events(thread_id, after_cursor=cursor, limit=100)
+                if page:
+                    for event in page:
+                        cursor = event["cursor"]
+                        yield _sse_frame(event["event_type"], event, cursor)
+                    continue
+                yield ": keepalive\n\n"
+                should_continue = wait(settings.keepalive_seconds)
+                if inspect.isawaitable(should_continue):
+                    should_continue = await should_continue
+                if should_continue is False:
+                    break
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-store",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.post("/observe/presence/heartbeat")
+    def presence_heartbeat(payload: _HeartbeatRequest, request: Request):
+        session_token, _ = require_session(request)
+        if reader.get_snapshot(payload.thread_id) is None:
+            raise HTTPException(status_code=404, detail="task is unavailable")
+        try:
+            return reader.heartbeat(session_token, payload.thread_id)
+        except ObservationSecurityError as error:
+            raise HTTPException(status_code=401, detail=error.code) from error
+
+    return router
+
+
 def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -336,3 +482,8 @@ def _display_name(value):
 
 def _parse_time(value):
     return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def _sse_frame(event_type, payload, cursor):
+    data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"id: {int(cursor)}\nevent: {event_type}\ndata: {data}\n\n"
