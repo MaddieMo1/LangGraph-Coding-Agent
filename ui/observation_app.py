@@ -15,12 +15,170 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+import gradio as gr
 from pydantic import BaseModel, Field
 
 from memory.task_observation import ObservationContractError, sanitize_identifier
 
 
 SESSION_COOKIE = "day18_observer_session"
+
+OBSERVATION_CSS = """
+:root { color-scheme: dark; }
+body, .gradio-container { background: #07101d !important; color: #e6eef8 !important; }
+.observation-shell { max-width: 1180px; margin: 0 auto; padding: 28px; font-family: Inter, "Segoe UI", sans-serif; }
+.observation-header, .observation-card { border: 1px solid #203047; border-radius: 16px; background: #0b1626; }
+.observation-header { padding: 22px; margin-bottom: 16px; }
+.observation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.observation-card { padding: 16px; min-height: 88px; }
+.observation-label { color: #8292a8; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.observation-value { margin-top: 8px; color: #e6eef8; overflow-wrap: anywhere; }
+.observation-login { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.observation-login input, .observation-login button, #observation-task-select { border: 1px solid #35506f; border-radius: 10px; padding: 10px 12px; background: #081321; color: #e6eef8; }
+.observation-login button { border-color: #31d7e7; color: #31d7e7; cursor: pointer; }
+#observation-dashboard[hidden] { display: none; }
+"""
+
+OBSERVATION_HTML = """
+<div class="observation-shell">
+  <section class="observation-header">
+    <div class="observation-label">Day18 · Team Observation</div>
+    <h1>团队只读观察</h1>
+    <p>该页面只能查看脱敏任务状态，不能审批、重试、取消或操作 Git。</p>
+    <div class="observation-login" id="observation-login">
+      <input id="observation-display-name" maxlength="40" placeholder="显示名称（可选）" autocomplete="nickname">
+      <input id="observation-read-token" type="password" maxlength="256" placeholder="只读访问令牌" autocomplete="current-password">
+      <button id="observation-login-submit" type="button">进入只读观察</button>
+    </div>
+    <div id="observation-login-error" role="status"></div>
+  </section>
+  <section id="observation-dashboard" hidden>
+    <div class="observation-card">
+      <label class="observation-label" for="observation-task-select">观察任务</label>
+      <select id="observation-task-select"></select>
+    </div>
+    <div class="observation-grid">
+      <div class="observation-card"><div class="observation-label">连接状态</div><div class="observation-value" id="observation-connection">未连接</div></div>
+      <div class="observation-card"><div class="observation-label">任务状态</div><div class="observation-value" id="observation-status">—</div></div>
+      <div class="observation-card"><div class="observation-label">当前门禁</div><div class="observation-value" id="observation-gate">—</div></div>
+      <div class="observation-card"><div class="observation-label">更新时间</div><div class="observation-value" id="observation-time">—</div></div>
+      <div class="observation-card"><div class="observation-label">任务所有者</div><div class="observation-value" id="observation-owner">—</div></div>
+      <div class="observation-card"><div class="observation-label">审批所有者</div><div class="observation-value" id="observation-approval-owner">—</div></div>
+      <div class="observation-card"><div class="observation-label">在线观察者</div><div class="observation-value" id="observation-presence">0</div></div>
+      <div class="observation-card"><div class="observation-label">断线游标</div><div class="observation-value" id="observation-cursor">0</div></div>
+      <div class="observation-card"><div class="observation-label">诊断摘要</div><div class="observation-value" id="observation-diagnostic">—</div></div>
+      <div class="observation-card"><div class="observation-label">质量门禁</div><div class="observation-value" id="observation-gates">—</div></div>
+      <div class="observation-card"><div class="observation-label">最终产物</div><div class="observation-value" id="observation-artifacts">—</div></div>
+    </div>
+  </section>
+</div>
+"""
+
+OBSERVATION_JS = r"""
+(() => {
+  const byId = (id) => document.getElementById(id);
+  let eventSource = null;
+  let heartbeatTimer = null;
+  let activeThread = "";
+
+  const text = (id, value) => { const node = byId(id); if (node) node.textContent = value ?? "—"; };
+  const render = (snapshot) => {
+    if (!snapshot) return;
+    text("observation-status", snapshot.status);
+    text("observation-gate", snapshot.current_gate);
+    text("observation-time", snapshot.updated_at);
+    text("observation-owner", [snapshot.owner_actor_id, snapshot.owner_instance_id].filter(Boolean).join(" · ") || "—");
+    text("observation-approval-owner", snapshot.approval_owner_id || "—");
+    text("observation-diagnostic", [snapshot.diagnostic?.error_code, snapshot.diagnostic?.summary].filter(Boolean).join(" · ") || "—");
+    text("observation-gates", JSON.stringify(snapshot.gates || {}));
+    text("observation-artifacts", JSON.stringify(snapshot.artifacts || {}));
+  };
+
+  const refreshSnapshot = async () => {
+    if (!activeThread) return;
+    const response = await fetch(`/observe/tasks/${encodeURIComponent(activeThread)}/snapshot`, { credentials: "same-origin" });
+    if (response.ok) render(await response.json());
+  };
+
+  const refreshPresence = async () => {
+    if (!activeThread) return;
+    await fetch("/observe/presence/heartbeat", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: activeThread })
+    });
+    const response = await fetch(`/observe/tasks/${encodeURIComponent(activeThread)}/presence`, { credentials: "same-origin" });
+    if (response.ok) {
+      const values = await response.json();
+      text("observation-presence", values.map((item) => item.display_name).join("、") || "0");
+    }
+  };
+
+  const openStream = async (threadId) => {
+    activeThread = threadId;
+    if (eventSource) eventSource.close();
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    await refreshSnapshot();
+    await refreshPresence();
+    const cursorKey = `day18-cursor:${threadId}`;
+    const cursor = sessionStorage.getItem(cursorKey) || "0";
+    const url = `/observe/tasks/${encodeURIComponent(threadId)}/events?after_cursor=${encodeURIComponent(cursor)}`;
+    eventSource = new EventSource(url, { withCredentials: true });
+    text("observation-connection", "连接中");
+    const handle = async (event) => {
+      if (event.lastEventId) {
+        sessionStorage.setItem(cursorKey, event.lastEventId);
+        text("observation-cursor", event.lastEventId);
+      }
+      const payload = event.data ? JSON.parse(event.data) : {};
+      if (payload.snapshot) render(payload.snapshot);
+      else await refreshSnapshot();
+    };
+    ["task_started", "state_changed", "gate_entered", "approval_waiting", "approval_resolved", "task_completed", "task_failed", "artifact_available", "cursor_reset", "snapshot_reset"].forEach((name) => eventSource.addEventListener(name, handle));
+    eventSource.onopen = () => text("observation-connection", "已连接 · 只读");
+    eventSource.onerror = () => text("observation-connection", "连接中断，正在重连");
+    heartbeatTimer = setInterval(refreshPresence, 20000);
+  };
+
+  const loadTasks = async () => {
+    const response = await fetch("/observe/tasks", { credentials: "same-origin" });
+    if (!response.ok) throw new Error("无法读取任务列表");
+    const tasks = await response.json();
+    const select = byId("observation-task-select");
+    select.replaceChildren();
+    tasks.forEach((task) => {
+      const option = document.createElement("option");
+      option.value = task.thread_id;
+      option.textContent = `${task.status} · ${task.current_gate} · ${task.thread_id.slice(0, 8)}`;
+      select.appendChild(option);
+    });
+    if (tasks.length) await openStream(tasks[0].thread_id);
+    select.onchange = () => openStream(select.value);
+  };
+
+  const start = () => {
+    const submit = byId("observation-login-submit");
+    if (!submit) return setTimeout(start, 50);
+    submit.onclick = async () => {
+      const tokenInput = byId("observation-read-token");
+      const displayInput = byId("observation-display-name");
+      const response = await fetch("/observe/session", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tokenInput.value, display_name: displayInput.value })
+      });
+      tokenInput.value = '';
+      if (!response.ok) {
+        text("observation-login-error", "只读令牌无效或观察服务未启用");
+        return;
+      }
+      byId("observation-login").hidden = true;
+      byId("observation-dashboard").hidden = false;
+      text("observation-login-error", "");
+      await loadTasks();
+    };
+  };
+  start();
+})();
+"""
 
 
 class ObservationSecurityError(ValueError):
@@ -390,13 +548,24 @@ def create_observation_router(reader, sessions, settings, waiter=None):
             raise HTTPException(status_code=404, detail="task is unavailable")
         return exported
 
+    @router.get("/observe/tasks/{thread_id}/presence")
+    def task_presence(thread_id: str, request: Request):
+        require_session(request)
+        if reader.get_snapshot(thread_id) is None:
+            raise HTTPException(status_code=404, detail="task is unavailable")
+        return reader.presence(thread_id)
+
     @router.get("/observe/tasks/{thread_id}/events")
     def task_events(thread_id: str, request: Request):
         require_session(request)
         snapshot = reader.get_snapshot(thread_id)
         if snapshot is None:
             raise HTTPException(status_code=404, detail="task is unavailable")
-        raw_cursor = request.headers.get("last-event-id", "0") or "0"
+        raw_cursor = (
+            request.headers.get("last-event-id", "")
+            or request.query_params.get("after_cursor", "")
+            or "0"
+        )
         try:
             requested_cursor = int(raw_cursor)
         except ValueError as error:
@@ -460,6 +629,14 @@ def create_observation_router(reader, sessions, settings, waiter=None):
             raise HTTPException(status_code=401, detail=error.code) from error
 
     return router
+
+
+def build_observation_app():
+    """Build a static read-only shell; all data arrives through cookie-authenticated SSE."""
+
+    with gr.Blocks(title="Day18 Team Observation", fill_width=True) as demo:
+        gr.HTML(OBSERVATION_HTML, elem_id="day18-observation-root")
+    return demo
 
 
 def _truthy(value):
