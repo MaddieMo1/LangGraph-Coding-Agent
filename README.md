@@ -326,13 +326,31 @@ UNITY_KNOWLEDGE_CACHE_PATH=D:\path\to\runtime-state\unity_knowledge_cache.json
 
 远程页面经过 HTTPS 域名、重定向、内容长度、提示词注入和版本校验；Agent 最多接收 3 条、每条 600 字符的只读摘要。完整远程正文不会展示在审批 UI，也不能扩大结构化需求契约。离线 CI 不设置联网开关，因此不会访问网络。
 
+### Day17 — 审批审计与权限控制
+
+Day17 使用服务启动时绑定的本地身份，不接受浏览器提交的身份或角色。可在 `.env` 中配置：
+
+```env
+APPROVAL_ACTOR_ID=local-maintainer
+APPROVAL_ACTOR_ROLE=approver
+APPROVAL_AUDIT_PATH=D:\path\to\runtime-state\approval_audit.jsonl
+```
+
+角色遵循最小权限：`viewer` 只能查看审批与导出审计；`reviewer` 可以记录文件选择和备注；`approver` 可以批准或拒绝；`operator` 可以继续、重试和归档任务，但不能隐式审批。缺少或无效的身份配置会安全降级为 `anonymous · viewer`，审批按钮保持禁用，工作流服务端也会拒绝决策。
+
+`APPROVAL_AUDIT_PATH` 是运行时证据，不是源代码。JSONL 中只保存相对文件名、操作、内容哈希、角色、结果和经过清理的有界备注；不保存完整 Diff、源码、Prompt、模型响应、绝对路径或密钥。每条记录包含单调序号、前序哈希和事件哈希，读取、导出和写入前都会验证完整链。
+
+这套启动身份**不是登录系统**，不提供密码、远程认证或浏览器角色切换，只适用于受信任的本机操作者。应用仍仅监听 `127.0.0.1`；在开放局域网、公网或多人远程操作前，需要另行设计真实认证与安全会话。
+
+[Day17 Notebook](./day17/Day17.ipynb) 可完全离线复核角色能力、审计事件链接、敏感备注清理和只读验证导出。
+
 启动前可执行只读环境预检：
 
 ```bash
 python -m tools.environment_check
 ```
 
-预检验证 Python 版本、Provider 路由覆盖、Unity Editor、Unity 测试工程、生成代码独立 Git 仓库和 Git 身份。它不调用网络、不运行 Unity、不修改仓库，也不会输出 API Key；非零退出码表示环境尚未满足完整工作流要求。生成代码仓库可以处于脏状态，具体的任务恢复或安全归档仍由现有 Git 工作流处理。
+预检验证 Python 版本、本地审批角色、审计目录、Provider 路由覆盖、Unity Editor、Unity 测试工程、生成代码独立 Git 仓库和 Git 身份。它不调用网络、不运行 Unity、不修改仓库，也不会输出身份值、运行时路径或 API Key；非零退出码表示环境尚未满足完整工作流要求。生成代码仓库可以处于脏状态，具体的任务恢复或安全归档仍由现有 Git 工作流处理。
 
 ## ▶️ 运行
 

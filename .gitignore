@@ -38,6 +38,7 @@ memory/dependency_graph.json
 memory/patch_history.json
 memory/long_term_memory.json
 memory/approval_history.json
+memory/approval_audit.jsonl
 memory/workflow_checkpoints.sqlite*
 memory/unity_knowledge_cache.json
 

@@ -5,6 +5,7 @@ import sys
 
 from llm.model_router import default_routes
 from llm.provider import PROVIDER_SETTINGS
+from tools.approval_policy import ApprovalPolicy
 from tools.git_tool import GitTool
 
 
@@ -12,6 +13,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_UNITY_EDITOR_PATH = r"D:\Unity\Hub\Unity_Editor\2022.3.62f2c1\Editor\Unity.exe"
 DEFAULT_UNITY_PROJECT_PATH = r"D:\Unity\Unity_Project\CodingAgentTest"
 DEFAULT_GENERATED_SOURCE_PATH = os.path.join(PROJECT_ROOT, "generated")
+DEFAULT_APPROVAL_AUDIT_PATH = os.path.join(
+    PROJECT_ROOT,
+    "memory",
+    "approval_audit.jsonl",
+)
 
 
 def _check(name, success, error_code="", message=""):
@@ -49,6 +55,47 @@ def inspect_environment(
             python_ready,
             "PYTHON_VERSION_UNSUPPORTED",
             ".".join(str(part) for part in python_version),
+        )
+    )
+
+    approval_policy = ApprovalPolicy.from_environment(environment)
+    actor = approval_policy.actor
+    identity_message = (
+        "anonymous viewer; approval decisions disabled"
+        if actor.actor_id == "anonymous"
+        else f"configured {actor.role}; server-bound capabilities active"
+    )
+    checks.append(
+        _check(
+            "Approval identity",
+            True,
+            message=identity_message,
+        )
+    )
+
+    audit_path = os.path.abspath(
+        str(
+            environment.get("APPROVAL_AUDIT_PATH", DEFAULT_APPROVAL_AUDIT_PATH)
+            or DEFAULT_APPROVAL_AUDIT_PATH
+        ).strip()
+    )
+    audit_parent = os.path.dirname(audit_path)
+    audit_path_ready = (
+        audit_path.lower().endswith(".jsonl")
+        and bool(audit_parent)
+        and os.path.isdir(audit_parent)
+        and not os.path.isdir(audit_path)
+    )
+    checks.append(
+        _check(
+            "Approval audit path",
+            audit_path_ready,
+            "APPROVAL_AUDIT_PATH_INVALID",
+            (
+                "append-only JSONL parent directory found"
+                if audit_path_ready
+                else "set APPROVAL_AUDIT_PATH to a JSONL file in an existing runtime directory"
+            ),
         )
     )
 
