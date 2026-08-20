@@ -31,17 +31,24 @@ body, .gradio-container { background: #07101d !important; color: #e6eef8 !import
 .observation-header { padding: 22px; margin-bottom: 16px; }
 .observation-header h1 { color: #f4f8ff !important; }
 .observation-header p { color: #b8c6d9 !important; }
-.observation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.observation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .observation-card { padding: 16px; min-height: 88px; }
-.observation-label { color: #8292a8; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-.observation-value { margin-top: 8px; color: #e6eef8; overflow-wrap: anywhere; }
+.observation-label { color: #a8b9cf !important; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.observation-value { margin-top: 8px; color: #f0f5fc !important; line-height: 1.55; overflow-wrap: anywhere; }
 .observation-login { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .observation-login[hidden] { display: none; }
 .observation-login input, .observation-login button, #observation-task-select { border: 1px solid #35506f; border-radius: 10px; padding: 10px 12px; background: #081321; color: #e6eef8; }
 .observation-login input::placeholder { color: #9aabc0; opacity: 1; }
 .observation-login button { border-color: #31d7e7; color: #31d7e7; cursor: pointer; }
+.observation-token-help { margin: 10px 0 0 !important; color: #9fb0c6 !important; font-size: 13px; }
+.observation-token-help code { padding: 2px 6px; border-radius: 6px; background: #102239; color: #7ee7f0; }
 #observation-login-error { min-height: 20px; margin-top: 8px; color: #ff9aa8 !important; }
 #observation-dashboard[hidden] { display: none; }
+.observation-task-picker { position: relative; z-index: 2; min-height: auto; }
+#observation-task-select { width: 100%; min-height: 44px; margin-top: 8px; color-scheme: dark; background-color: #081321 !important; color: #f4f8ff !important; font-weight: 600; }
+#observation-task-select:focus { border-color: #31d7e7; outline: 2px solid rgba(49, 215, 231, .2); outline-offset: 2px; }
+#observation-task-select option { background-color: #0d1b2d !important; color: #f4f8ff !important; font-weight: 500; }
+#observation-task-select option:checked { background-color: #173451 !important; color: #ffffff !important; }
 """
 
 OBSERVATION_HTML = """
@@ -55,10 +62,11 @@ OBSERVATION_HTML = """
       <input id="observation-read-token" type="password" maxlength="256" placeholder="只读访问令牌" autocomplete="current-password">
       <button id="observation-login-submit" type="button">进入只读观察</button>
     </div>
+    <p class="observation-token-help">访问令牌由服务管理员在 <code>OBSERVATION_READ_TOKEN</code> 中设置，请通过安全渠道获取。</p>
     <div id="observation-login-error" role="status"></div>
   </section>
   <section id="observation-dashboard" hidden>
-    <div class="observation-card">
+    <div class="observation-card observation-task-picker">
       <label class="observation-label" for="observation-task-select">观察任务</label>
       <select id="observation-task-select"></select>
     </div>

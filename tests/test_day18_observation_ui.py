@@ -69,6 +69,17 @@ class ObservationUiTests(unittest.TestCase):
         ):
             self.assertIn(expected_rule, OBSERVATION_CSS)
 
+    def test_observation_page_explains_token_source_and_styles_native_task_options(self):
+        self.assertIn("OBSERVATION_READ_TOKEN", OBSERVATION_HTML)
+        self.assertIn("请通过安全渠道获取", OBSERVATION_HTML)
+        for expected_rule in (
+            "#observation-task-select { width: 100%;",
+            "color-scheme: dark;",
+            "#observation-task-select option { background-color: #0d1b2d !important; color: #f4f8ff !important;",
+            "#observation-task-select option:checked { background-color: #173451 !important; color: #ffffff !important;",
+        ):
+            self.assertIn(expected_rule, OBSERVATION_CSS)
+
     def test_read_routes_are_registered_before_gradio_mounts(self):
         settings = ObservationSettings.from_environment({
             "OBSERVATION_ENABLED": "true",
