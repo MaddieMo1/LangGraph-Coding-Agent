@@ -647,7 +647,7 @@ def create_observation_router(reader, sessions, settings, waiter=None):
 def build_observation_app():
     """Build a static read-only shell; all data arrives through cookie-authenticated SSE."""
 
-    with gr.Blocks(title="Day18 Team Observation", fill_width=True) as demo:
+    with gr.Blocks(title="LangGraph Coding Agent · 团队只读观察", fill_width=True) as demo:
         gr.HTML(OBSERVATION_HTML, elem_id="day18-observation-root")
     return demo
 

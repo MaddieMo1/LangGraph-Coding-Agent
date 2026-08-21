@@ -20,6 +20,9 @@ READ_TOKEN = "day18-read-only-token-with-at-least-32-chars"
 
 class ObservationUiTests(unittest.TestCase):
     def test_observation_page_uses_the_permanent_product_label(self):
+        config = build_observation_app().get_config_file()
+
+        self.assertEqual("LangGraph Coding Agent · 团队只读观察", config["title"])
         self.assertIn("TEAM OBSERVATION · READ ONLY", OBSERVATION_HTML)
         self.assertNotIn("Day18 · Team Observation", OBSERVATION_HTML)
 
