@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/Providers-DeepSeek%20%7C%20Kimi%20%7C%20Qwen%20%7C%20GLM-purple" alt="DeepSeek、Kimi、Qwen 与 GLM">
-  <img src="https://img.shields.io/badge/Version-v1.0.0-success" alt="版本 v1.0.0">
+  <img src="https://img.shields.io/badge/Version-v1.1.0-success" alt="版本 v1.1.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -528,6 +528,14 @@ python main.py
 - GitHub Actions 执行无需 Provider、Unity 或密钥的完整离线测试、Python 编译与空白检查。
 - `day15/Day15.ipynb` 与 `docs/releases/v1.0.0.md` 提供可复现教程、发布证据、兼容性和已知限制。
 - v1.0 UI 通过真实浏览器复核；运行时任务恢复后仍严格停在 Repair 人工审批边界。
+
+### ✅ v1.1.0 — 已完成（Day16～Day18）
+
+- 增加仅信任 Unity 官方域名、版本匹配且证据有界的 Unity API 知识检索；
+- 增加服务端本地角色权限、哈希链接审批审计链和事务式审批证据；
+- 增加同一服务内的团队只读观察、脱敏任务名称、SSE 断线续传、多观察者在线状态及本机控制面隔离；
+- 使用真实手机完成第二设备验收：观察页正常连接，局域网控制台根路径保持拒绝访问；
+- [v1.1.0 发布说明](./docs/releases/v1.1.0.md) 记录新增能力、安全边界、兼容性、验证证据与已知限制。
 
 ### ✅ Day16 — 已完成（Unity API 知识检索）
 
