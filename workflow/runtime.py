@@ -16,9 +16,16 @@ from tools.unity_test_tool import (
 class WorkflowRuntime:
     """Own a SQLite-backed workflow and its connection lifecycle."""
 
-    def __init__(self, database_path, workflow_factory=AgentWorkflow):
+    def __init__(
+        self,
+        database_path,
+        workflow_factory=AgentWorkflow,
+        observation_projector=None,
+    ):
         self.database_path = os.path.abspath(database_path)
         self.workflow_factory = workflow_factory
+        self.observation_projector = observation_projector
+        self.observation_warning = {}
         self.connection = None
         self.checkpointer = None
         self.workflow = None
@@ -59,17 +66,18 @@ class WorkflowRuntime:
         return str(uuid.uuid4())
 
     def invoke(self, state, thread_id):
-        return self._require_open().invoke(
+        result = self._require_open().invoke(
             {**state, "thread_id": thread_id},
             config=self._config(thread_id),
         )
+        self._project_values(thread_id, result)
+        return result
 
     def stream(self, state, thread_id):
         """Yield durable workflow snapshots as each graph node completes."""
-        yield from self._require_open().stream(
+        yield from self._stream_with_observation(
             {**state, "thread_id": thread_id},
-            config=self._config(thread_id),
-            stream_mode="values",
+            thread_id,
         )
 
     def resume(self, thread_id, decision):
@@ -77,7 +85,9 @@ class WorkflowRuntime:
         self._require_open()
         if self.checkpointer.get_tuple(config) is None:
             raise ValueError(f"checkpoint is unavailable for thread_id '{thread_id}'")
-        return self.app.invoke(Command(resume=decision), config=config)
+        result = self.app.invoke(Command(resume=decision), config=config)
+        self._project_values(thread_id, result)
+        return result
 
     def resume_stream(self, thread_id, decision):
         """Yield durable snapshots while resuming an interrupted workflow."""
@@ -85,11 +95,67 @@ class WorkflowRuntime:
         self._require_open()
         if self.checkpointer.get_tuple(config) is None:
             raise ValueError(f"checkpoint is unavailable for thread_id '{thread_id}'")
-        yield from self.app.stream(
+        yield from self._stream_with_observation(
             Command(resume=decision),
-            config=config,
-            stream_mode="values",
+            thread_id,
         )
+
+    def _stream_with_observation(self, input_value, thread_id):
+        for values in self.app.stream(
+            input_value,
+            config=self._config(thread_id),
+            stream_mode="values",
+        ):
+            self._project_values(thread_id, values)
+            yield values
+
+    def _project_values(self, thread_id, values, reconcile=False):
+        if self.observation_projector is None:
+            return None
+        try:
+            checkpoint = self.checkpointer.get_tuple(self._config(thread_id))
+            if checkpoint is None:
+                return None
+            payload = checkpoint.checkpoint or {}
+            checkpoint_id = str(
+                payload.get("id", "")
+                or checkpoint.config.get("configurable", {}).get("checkpoint_id", "")
+            )
+            updated_at = str(payload.get("ts", "") or "")
+            timing = self.thread_timing(thread_id)
+            policy = getattr(self.workflow, "approval_policy", None)
+            actor = getattr(policy, "actor", None)
+            method = (
+                self.observation_projector.reconcile
+                if reconcile
+                else self.observation_projector.project
+            )
+            result = method(
+                thread_id=thread_id,
+                checkpoint_id=checkpoint_id,
+                values=dict(values or {}),
+                updated_at=updated_at,
+                started_at=timing["started_at"] or updated_at,
+                approval_owner_id=getattr(actor, "actor_id", ""),
+            )
+            self.observation_warning = {}
+            return result
+        except Exception:
+            self.observation_warning = {
+                "success": False,
+                "error_code": "OBSERVATION_PROJECTION_FAILED",
+            }
+            return None
+
+    def reconcile_observation(self, thread_id):
+        snapshot = self.get_state(thread_id)
+        return self._project_values(thread_id, snapshot.values or {}, reconcile=True)
+
+    def reconcile_observations(self, limit=100):
+        results = []
+        for task in self.list_threads(limit=limit):
+            results.append(self.reconcile_observation(task["thread_id"]))
+        return results
 
     def get_state(self, thread_id):
         config = self._config(thread_id)
@@ -269,6 +335,7 @@ class WorkflowRuntime:
             "git_result": archived,
         }
         self.app.update_state(self._config(normalized_thread_id), update)
+        self.reconcile_observation(normalized_thread_id)
         return {**state, **update, "success": True, "archive_result": archived}
 
     def retry_test_generation_stream(self, thread_id):
@@ -365,11 +432,7 @@ class WorkflowRuntime:
             },
             as_node="human_approval",
         )
-        yield from self.app.stream(
-            None,
-            config=config,
-            stream_mode="values",
-        )
+        yield from self._stream_with_observation(None, normalized_thread_id)
 
     def retry_baseline_compile_stream(self, thread_id):
         """Re-run a system-level Unity baseline failure in the same task."""
@@ -426,7 +489,7 @@ class WorkflowRuntime:
             },
             as_node="git_prepare",
         )
-        yield from self.app.stream(None, config=config, stream_mode="values")
+        yield from self._stream_with_observation(None, normalized_thread_id)
 
     def continue_active_task_stream(self, thread_id):
         """Continue a saved non-terminal task from its durable next node."""
@@ -453,11 +516,7 @@ class WorkflowRuntime:
                 yield {**state, "continue_result": verified}
                 return
         try:
-            yield from self.app.stream(
-                None,
-                config=self._config(normalized_thread_id),
-                stream_mode="values",
-            )
+            yield from self._stream_with_observation(None, normalized_thread_id)
         except Exception as error:
             latest = self.get_state(normalized_thread_id)
             failed_node = latest.next[0] if latest.next else "workflow"
@@ -546,7 +605,7 @@ class WorkflowRuntime:
                 },
                 as_node="architecture_validator",
             )
-            yield from self.app.stream(None, config=config, stream_mode="values")
+            yield from self._stream_with_observation(None, normalized_thread_id)
             return
 
         verified = self.workflow.git_agent.verify_retry_state(state)
@@ -576,11 +635,7 @@ class WorkflowRuntime:
                 },
                 as_node="reviewer",
             )
-            yield from self.app.stream(
-                None,
-                config=config,
-                stream_mode="values",
-            )
+            yield from self._stream_with_observation(None, normalized_thread_id)
             return
 
         self.app.update_state(
@@ -604,11 +659,7 @@ class WorkflowRuntime:
             },
             as_node="unity_compiler",
         )
-        yield from self.app.stream(
-            None,
-            config=config,
-            stream_mode="values",
-        )
+        yield from self._stream_with_observation(None, normalized_thread_id)
 
     @staticmethod
     def _is_interrupted_test_generation_retry(state):
@@ -1051,12 +1102,26 @@ class WorkflowRuntime:
                 f"DELETE FROM checkpoints WHERE thread_id IN ({placeholders})",
                 normalized,
             ).rowcount
+        observation_result = None
+        observation_store = getattr(self.observation_projector, "store", None)
+        if observation_store is not None:
+            try:
+                observation_result = observation_store.delete_threads(
+                    observation_store.project_id,
+                    normalized,
+                )
+            except Exception:
+                self.observation_warning = {
+                    "success": False,
+                    "error_code": "OBSERVATION_DELETE_FAILED",
+                }
         return {
             "success": True,
             "thread_ids": normalized,
             "deleted_threads": len(normalized),
             "deleted_checkpoints": deleted_checkpoints,
             "deleted_writes": deleted_writes,
+            "observation_result": observation_result,
         }
 
     def delete_thread(self, thread_id):

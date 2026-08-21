@@ -1395,6 +1395,31 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("task-detail-drawer", components)
         self.assertIn("task-delete-confirm", components)
 
+    def test_team_observation_navigation_is_visible_only_when_enabled(self):
+        disabled_config = build_approval_app(
+            self.controller,
+            observation_enabled=False,
+        ).get_config_file()
+        enabled_config = build_approval_app(
+            self.controller,
+            observation_enabled=True,
+        ).get_config_file()
+
+        def observation_nav(config):
+            return next(
+                component["props"]
+                for component in config["components"]
+                if component.get("props", {}).get("elem_id") == "observation-nav"
+            )
+
+        self.assertFalse(observation_nav(disabled_config)["visible"])
+        enabled = observation_nav(enabled_config)
+        self.assertTrue(enabled["visible"])
+        self.assertIn('href="/observe/ui/"', enabled["value"])
+        self.assertIn('target="_blank"', enabled["value"])
+        self.assertIn('rel="noopener noreferrer"', enabled["value"])
+        self.assertIn("团队观察", enabled["value"])
+
     def test_task_center_and_drawer_force_dark_component_surfaces(self):
         self.assertIn("#task-center-cards .html-container", APPROVAL_CSS)
         self.assertIn("#task-center-view .loading", APPROVAL_CSS)
