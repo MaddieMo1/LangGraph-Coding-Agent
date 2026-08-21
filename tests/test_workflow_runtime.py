@@ -44,6 +44,10 @@ class RuntimeState(TypedDict, total=False):
     code_check_result: dict
     compile_result: dict
     test_result: dict
+    editmode_test_result: dict
+    playmode_test_result: dict
+    unity_snapshot: dict
+    unity_worker_jobs: list
     baseline_compile_result: dict
     baseline_compile_status: str
     baseline_retry_result: dict
@@ -1188,6 +1192,54 @@ class WorkflowRuntimeTest(unittest.TestCase):
                 self.assertEqual("archived", result["git_status"])
                 self.assertEqual("rejected", result["approval_status"])
                 self.assertIsNone(runtime.find_active_task())
+
+    def test_day19_summary_identifies_the_failed_platform_gate(self):
+        state = {
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "git_status": "prepared",
+            "test_generation_result": {"success": True},
+            "code_check_result": {"success": True},
+            "compile_result": {"success": True},
+            "editmode_test_result": {
+                "success": True,
+                "summary": {"total": 2, "passed": 2},
+            },
+            "playmode_test_result": {
+                "success": False,
+                "system_error": False,
+                "error_code": "TEST_ASSERTION_FAILED",
+                "summary": {"total": 1, "passed": 0, "failed": 1},
+            },
+            "test_result": {"success": False, "system_error": False},
+            "review": {},
+        }
+
+        summary = WorkflowRuntime.summarize_thread("day19", state)
+
+        self.assertEqual("unity_playmode", summary["failed_gate"])
+        self.assertTrue(summary["editmode_test_passed"])
+        self.assertFalse(summary["playmode_test_passed"])
+
+    def test_day19_worker_failure_is_not_retryable_as_code_repair(self):
+        state = {
+            "current_agent": "finish_task",
+            "approval_status": "approved",
+            "proposal_source": "repair",
+            "git_status": "prepared",
+            "approved_changes": [{"file": "A.cs"}],
+            "code_check_result": {"success": True},
+            "compile_result": {"success": True, "system_error": False},
+            "test_result": {"success": False, "system_error": False},
+            "editmode_test_result": {"success": True, "system_error": False},
+            "playmode_test_result": {
+                "success": False,
+                "system_error": True,
+                "failure_owner": "worker",
+            },
+        }
+
+        self.assertFalse(WorkflowRuntime.is_retryable_failed_repair(state))
 
 
 if __name__ == "__main__":

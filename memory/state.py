@@ -164,6 +164,14 @@ class AgentState(TypedDict):
     compile_history: List[Dict[str, Any]]
     test_result: Dict[str, Any]
     test_history: List[Dict[str, Any]]
+    unity_snapshot: Dict[str, Any]
+    unity_worker_mode: str
+    unity_worker_jobs: List[Dict[str, Any]]
+    editmode_test_result: Dict[str, Any]
+    playmode_test_result: Dict[str, Any]
+    editmode_test_history: List[Dict[str, Any]]
+    playmode_test_history: List[Dict[str, Any]]
+    unity_validation_status: str
 
 
     # =========================

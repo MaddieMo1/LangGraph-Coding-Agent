@@ -1,3 +1,6 @@
+from agents.unity_test import aggregate_test_results
+
+
 class LongTermMemoryNode:
     """Thin workflow integration for deterministic long-term memory updates."""
 
@@ -24,6 +27,14 @@ class LongTermMemoryNode:
         return self._observe(state, source="compile", result_key="compile_result")
 
     def observe_test(self, state):
+        if state.get("editmode_test_result") or state.get("playmode_test_result"):
+            state = {
+                **state,
+                "test_result": aggregate_test_results(
+                    state.get("editmode_test_result", {}),
+                    state.get("playmode_test_result", {}),
+                ),
+            }
         return self._observe(state, source="test", result_key="test_result")
 
     def _observe(self, state, source, result_key):
