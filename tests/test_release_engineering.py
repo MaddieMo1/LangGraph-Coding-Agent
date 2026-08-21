@@ -44,6 +44,8 @@ class ReleaseEngineeringTest(unittest.TestCase):
             (project / name).mkdir(parents=True, exist_ok=True)
         generated = root / "generated"
         generated.mkdir()
+        worker_state = root / "worker-state"
+        worker_state.mkdir()
         return {
             "DEEPSEEK_API_KEY": "deepseek-secret",
             "KIMI_API_KEY": "kimi-secret",
@@ -52,6 +54,12 @@ class ReleaseEngineeringTest(unittest.TestCase):
             "UNITY_EDITOR_PATH": str(editor),
             "UNITY_TEST_PROJECT_PATH": str(project),
             "GENERATED_SOURCE_PATH": str(generated),
+            "UNITY_WORKER_MODE": "local",
+            "UNITY_WORKER_STATE_PATH": str(worker_state),
+            "UNITY_WORKER_TIMEOUT_SECONDS": "900",
+            "UNITY_WORKER_RESULT_RETENTION_DAYS": "7",
+            "UNITY_WORKER_NETWORK_MODE": "disabled",
+            "UNITY_WORKER_NETWORK_ISOLATION_ENFORCED": "true",
         }
 
     def test_v1_version_is_shared_with_readme_and_ui(self):
@@ -76,6 +84,10 @@ class ReleaseEngineeringTest(unittest.TestCase):
         self.assertTrue(result["ready"])
         self.assertTrue(all(check["success"] for check in result["checks"]))
         self.assertNotIn("changed_files", result)
+        self.assertIn(
+            "Unity worker",
+            {check["name"] for check in result["checks"]},
+        )
 
     def test_environment_report_never_contains_secret_values(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -92,6 +104,25 @@ class ReleaseEngineeringTest(unittest.TestCase):
         report = format_environment_report(result)
         self.assertNotIn("never-print-this-secret", report)
         self.assertIn("Provider route coverage", report)
+        self.assertNotIn(str(root), report)
+
+    def test_environment_preflight_fails_closed_without_worker_isolation(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            environment = self.configured_environment(root)
+            environment["UNITY_WORKER_NETWORK_ISOLATION_ENFORCED"] = "false"
+            result = inspect_environment(
+                environment=environment,
+                python_version=(3, 11, 9),
+                git_tool_factory=FakeGitTool,
+            )
+
+        worker = next(
+            check for check in result["checks"] if check["name"] == "Unity worker"
+        )
+        self.assertFalse(worker["success"])
+        self.assertEqual("UNITY_WORKER_UNAVAILABLE", worker["error_code"])
+        self.assertNotIn(str(root), format_environment_report(result))
 
     def test_offline_ci_runs_tests_compileall_and_diff_check(self):
         workflow = (ROOT / ".github" / "workflows" / "offline-ci.yml").read_text(

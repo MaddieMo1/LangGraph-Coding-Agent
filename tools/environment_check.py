@@ -19,6 +19,11 @@ DEFAULT_APPROVAL_AUDIT_PATH = os.path.join(
     "memory",
     "approval_audit.jsonl",
 )
+DEFAULT_UNITY_WORKER_STATE_PATH = os.path.join(
+    os.path.dirname(PROJECT_ROOT),
+    "runtime-state",
+    "unity-worker",
+)
 
 
 def _check(name, success, error_code="", message=""):
@@ -171,6 +176,65 @@ def inspect_environment(
         )
     )
 
+    worker_mode = str(environment.get("UNITY_WORKER_MODE", "local") or "local").strip()
+    worker_state = os.path.abspath(
+        str(
+            environment.get(
+                "UNITY_WORKER_STATE_PATH",
+                DEFAULT_UNITY_WORKER_STATE_PATH,
+            )
+            or DEFAULT_UNITY_WORKER_STATE_PATH
+        ).strip()
+    )
+    timeout = _bounded_environment_integer(
+        environment,
+        "UNITY_WORKER_TIMEOUT_SECONDS",
+        default=900,
+        minimum=1,
+        maximum=3600,
+    )
+    retention = _bounded_environment_integer(
+        environment,
+        "UNITY_WORKER_RESULT_RETENTION_DAYS",
+        default=7,
+        minimum=1,
+        maximum=30,
+    )
+    network_mode = str(
+        environment.get("UNITY_WORKER_NETWORK_MODE", "disabled") or "disabled"
+    ).strip()
+    isolation = _strict_environment_boolean(
+        environment.get("UNITY_WORKER_NETWORK_ISOLATION_ENFORCED", "false")
+    )
+    worker_generated_root = str(
+        environment.get("GENERATED_SOURCE_PATH", DEFAULT_GENERATED_SOURCE_PATH)
+        or DEFAULT_GENERATED_SOURCE_PATH
+    ).strip()
+    worker_ready = (
+        worker_mode == "local"
+        and os.path.isdir(worker_state)
+        and not os.path.islink(worker_state)
+        and not _path_within(worker_state, PROJECT_ROOT)
+        and not _path_within(worker_state, unity_project)
+        and not _path_within(worker_state, worker_generated_root)
+        and timeout is not None
+        and retention is not None
+        and network_mode == "disabled"
+        and isolation is True
+    )
+    checks.append(
+        _check(
+            "Unity worker",
+            worker_ready,
+            "UNITY_WORKER_UNAVAILABLE",
+            (
+                "local worker state ready; bounded timeout and enforced disabled network"
+                if worker_ready
+                else "configure local worker state, bounded retention/timeout, and enforced network isolation"
+            ),
+        )
+    )
+
     generated_repository = str(
         environment.get("GENERATED_SOURCE_PATH", DEFAULT_GENERATED_SOURCE_PATH)
         or DEFAULT_GENERATED_SOURCE_PATH
@@ -224,6 +288,34 @@ def inspect_environment(
         "ready": all(check["success"] for check in checks),
         "checks": checks,
     }
+
+
+def _bounded_environment_integer(environment, name, *, default, minimum, maximum):
+    try:
+        value = int(str(environment.get(name, default) or default).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if minimum <= value <= maximum else None
+
+
+def _strict_environment_boolean(value):
+    normalized = str(value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _path_within(path, root):
+    if not path or not root:
+        return False
+    resolved_path = os.path.realpath(os.path.abspath(path))
+    resolved_root = os.path.realpath(os.path.abspath(root))
+    try:
+        return os.path.commonpath([resolved_path, resolved_root]) == resolved_root
+    except ValueError:
+        return False
 
 
 def format_environment_report(result):
