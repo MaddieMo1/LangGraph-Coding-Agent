@@ -33,6 +33,8 @@ env/
 # =========================
 generated/
 generated_tests/
+*.unityjob
+runtime-state/unity-worker/
 vector_store/
 memory/project_context.json
 memory/dependency_graph.json
