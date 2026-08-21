@@ -103,6 +103,9 @@ def dispatch_gate(state, gate, worker_client, clock=None):
         job_record = {
             **job,
             "status": accepted["result"].get("status", ""),
+            "worker_id": accepted["result"].get("worker_id", ""),
+            "started_at": accepted["result"].get("started_at", ""),
+            "finished_at": accepted["result"].get("finished_at", ""),
             "failure_owner": accepted["result"].get("failure_owner", ""),
             "error_code": accepted["result"].get("error_code", ""),
             "result_sha256": accepted.get("result_sha256", ""),
@@ -220,6 +223,8 @@ def _validation_result(gate, worker_result):
         "worker_id": worker_result.get("worker_id", ""),
         "job_id": worker_result.get("job_id", ""),
         "attempt": worker_result.get("attempt", 0),
+        "started_at": worker_result.get("started_at", ""),
+        "finished_at": worker_result.get("finished_at", ""),
         "snapshot_sha256": worker_result.get("snapshot_sha256", ""),
         "cleanup": dict(worker_result.get("cleanup", {}) or {}),
     }
@@ -236,6 +241,7 @@ def _client_failure(gate, snapshot_sha256, code):
         "errors": [{"code": code, "message": code, "test": ""}],
         "error_code": code, "failure_owner": owner, "worker_status": "rejected",
         "worker_id": "", "job_id": "", "attempt": 0,
+        "started_at": "", "finished_at": "",
         "snapshot_sha256": snapshot_sha256, "cleanup": {},
     }
 

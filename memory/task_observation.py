@@ -9,6 +9,8 @@ import sqlite3
 import threading
 import uuid
 
+from ui.view_state import worker_validation_view
+
 
 SCHEMA_VERSION = 1
 EVENT_TYPES = {
@@ -197,6 +199,8 @@ def _first_failure(values):
         "test_generation_result",
         "code_check_result",
         "compile_result",
+        "editmode_test_result",
+        "playmode_test_result",
         "test_result",
         "review",
         "model_error",
@@ -209,13 +213,13 @@ def _first_failure(values):
     return {"error": values.get("error", "") or values.get("git_error", "")}
 
 
-def _gate_summary(values):
+def _gate_summary(values, now=None):
     code_check = values.get("code_check_result", {}) or {}
     compile_result = values.get("compile_result", {}) or {}
     test_result = values.get("test_result", {}) or {}
     test_summary = test_result.get("summary", {}) or {}
     review = values.get("review", {}) or {}
-    return {
+    summary = {
         "code_check_passed": code_check.get("success"),
         "compile_passed": compile_result.get("success"),
         "test_passed": test_result.get("success"),
@@ -225,9 +229,13 @@ def _gate_summary(values):
         "review_score": review.get("score"),
         "repair_count": int(values.get("repair_count", 0) or 0),
     }
+    worker = worker_validation_view(values, now=now)
+    if _has_worker_metadata(worker):
+        summary["unity_worker"] = worker
+    return summary
 
 
-def _artifact_summary(values):
+def _artifact_summary(values, now=None):
     git_result = values.get("git_result", {}) or {}
     test_result = values.get("test_result", {}) or {}
     commit_hash = str(
@@ -235,7 +243,7 @@ def _artifact_summary(values):
     ).strip()
     if commit_hash and not HASH_PATTERN.fullmatch(commit_hash):
         commit_hash = ""
-    return {
+    artifacts = {
         "git_commit_hash": commit_hash,
         "git_commit_message": _sanitize_text(
             values.get("git_commit_message", "") or git_result.get("message", ""),
@@ -245,6 +253,21 @@ def _artifact_summary(values):
             test_result.get("report_path", "") or test_result.get("report", "")
         ),
     }
+    worker = worker_validation_view(values, now=now)
+    if _has_worker_metadata(worker):
+        artifacts["unity_worker"] = worker
+    return artifacts
+
+
+def _has_worker_metadata(worker):
+    return bool(
+        worker.get("mode")
+        or worker.get("worker_id")
+        or worker.get("gate")
+        or worker.get("status")
+        or worker.get("editmode", {}).get("status")
+        or worker.get("playmode", {}).get("status")
+    )
 
 
 def sanitize_task_snapshot(values, context):
@@ -279,8 +302,8 @@ def sanitize_task_snapshot(values, context):
             context.get("approval_owner_id", ""), "approval_owner_id", allow_empty=True
         ),
         "diagnostic": sanitize_diagnostic(_first_failure(values)),
-        "gates": _gate_summary(values),
-        "artifacts": _artifact_summary(values),
+        "gates": _gate_summary(values, now=context.get("updated_at")),
+        "artifacts": _artifact_summary(values, now=context.get("updated_at")),
     }
     return validate_snapshot(snapshot)
 
