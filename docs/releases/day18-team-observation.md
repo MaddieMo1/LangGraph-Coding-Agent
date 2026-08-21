@@ -40,7 +40,7 @@ OBSERVATION_ALLOW_INSECURE_HTTP=false
 - 端到端测试验证两个观察者同时读取同一任务，其中一个断线后从原游标续传，不重复也不漏掉事件。
 - `day18/Day18.ipynb` 已离线执行 5 个代码单元，0 个错误。
 - Microsoft Edge 通过本机 LAN 地址完成页面登录：令牌输入被清空，任务状态、门禁、所有者、观察者和 SSE 游标正确显示，页面无变更按钮或错误覆盖层；同一地址访问控制面根路径返回 403。
-- 完整回归：`python -m unittest discover -s tests -q`，482 项测试通过，耗时 21.501 秒。
+- 完整回归：`python -m unittest discover -s tests -q`，489 项测试通过，耗时 22.628 秒。
 - `python -m compileall -q .` 与 `git diff --check` 通过。
 
 ## 已知限制
