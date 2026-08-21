@@ -1,6 +1,6 @@
 # Day19：隔离 Unity Worker 与双模式验证
 
-状态：实现与离线验收进行中。本文把可在仓库内复现的证据、真实本地 Unity 证据和真实远程 Worker 证据分开记录；未运行的探针必须保持 `PENDING`，不能由 fixture 或 loopback 测试替代。
+状态：实现与离线验收已完成，真实 Worker 环境验收受阻。本文把可在仓库内复现的证据、真实本地 Unity 证据和真实远程 Worker 证据分开记录；未运行的探针必须保持 `PENDING`，不能由 fixture 或 loopback 测试替代。
 
 ## 实现范围
 
@@ -37,14 +37,16 @@ UNITY_REMOTE_WORKER_DATABASE=D:\path\to\runtime-state\unity-worker\remote-worker
 ### 离线证据
 
 - Notebook：2026-08-21 使用 `nbconvert --execute` 离线执行 7 个代码单元，检查为 0 个 error outputs；生成的 executed 副本检查后已删除。
-- Day19 发布契约测试：3 项通过；完整 Day19 专项测试数与耗时留待 Task 10 统一记录。
-- 完整 Python 回归：PENDING — Task 10 执行并记录精确测试数与耗时。
-- Python 编译与 `git diff --check`：PENDING。
+- Day19 专项：2026-08-21 执行计划列出的 11 个测试模块，73 项通过，耗时 1.722 秒。
+- 完整 Python 回归：2026-08-21 执行 `python -m unittest discover -s tests -p "test_*.py"`，570 项通过，耗时 23.992 秒；运行中存在 asyncio 资源告警，但没有测试失败。
+- `python -m compileall agents tools worker workflow memory ui tests` 与 `git diff --check` 通过。
+- 提交差异凭据/路径审计只命中示例占位值、固定测试 fixture、脱敏负例和既有默认 Unity 路径，没有发现实际凭据。
 - fixture 只证明契约、拒绝路径和状态机逻辑，不证明真实 Unity、真实 HTTPS 链路或强制网络隔离。
 
 ### 本地 Unity 证据
 
 - 状态：PENDING。
+- 环境预检：Unity Editor 可执行文件、Unity 测试工程和生成代码 Git 仓库均通过；Unity Worker 因没有可证明的本地网络隔离而返回 `UNITY_WORKER_UNAVAILABLE`。未绕过该门禁直接运行 Unity。
 - Unity 2022.3 版本：PENDING。
 - compile 结果：PENDING。
 - EditMode 通过/总数：PENDING。
@@ -57,6 +59,7 @@ UNITY_REMOTE_WORKER_DATABASE=D:\path\to\runtime-state\unity-worker\remote-worker
 ### 真实远程 Worker 证据
 
 - 状态：PENDING（loopback FastAPI fixture 不算真实远程验收）。
+- 环境预检：没有可用的独立 HTTPS Worker 与专用凭据，不能执行真实远程探针。
 - 独立主机/运行环境标识：PENDING。
 - HTTPS 证书与请求签名验证：PENDING。
 - 默认网络隔离强制证据：PENDING。
