@@ -2,6 +2,8 @@
 
 import os
 import sys
+import ipaddress
+from urllib.parse import urlparse
 
 from llm.model_router import default_routes
 from llm.provider import PROVIDER_SETTINGS
@@ -141,16 +143,28 @@ def inspect_environment(
         )
     )
 
+    worker_mode = str(
+        environment.get("UNITY_WORKER_MODE", "local") or "local"
+    ).strip().lower()
     unity_editor = str(
         environment.get("UNITY_EDITOR_PATH", DEFAULT_UNITY_EDITOR_PATH)
         or DEFAULT_UNITY_EDITOR_PATH
     ).strip()
+    unity_editor_ready = (
+        worker_mode == "remote" or (bool(unity_editor) and os.path.isfile(unity_editor))
+    )
     checks.append(
         _check(
             "Unity Editor",
-            bool(unity_editor) and os.path.isfile(unity_editor),
+            unity_editor_ready,
             "UNITY_EDITOR_UNAVAILABLE",
-            "configured executable found" if unity_editor and os.path.isfile(unity_editor) else "set UNITY_EDITOR_PATH to an existing executable",
+            (
+                "executed by configured remote worker"
+                if worker_mode == "remote"
+                else "configured executable found"
+                if unity_editor and os.path.isfile(unity_editor)
+                else "set UNITY_EDITOR_PATH to an existing executable"
+            ),
         )
     )
 
@@ -159,7 +173,7 @@ def inspect_environment(
         or DEFAULT_UNITY_PROJECT_PATH
     ).strip()
     required_project_directories = ("Assets", "Packages", "ProjectSettings")
-    unity_project_ready = bool(unity_project) and all(
+    unity_project_ready = worker_mode == "remote" or bool(unity_project) and all(
         os.path.isdir(os.path.join(unity_project, name))
         for name in required_project_directories
     )
@@ -169,14 +183,15 @@ def inspect_environment(
             unity_project_ready,
             "UNITY_PROJECT_INVALID",
             (
-                "Assets, Packages, and ProjectSettings found"
+                "snapshot project is validated by the remote worker"
+                if worker_mode == "remote"
+                else "Assets, Packages, and ProjectSettings found"
                 if unity_project_ready
                 else "set UNITY_TEST_PROJECT_PATH to a valid Unity project"
             ),
         )
     )
 
-    worker_mode = str(environment.get("UNITY_WORKER_MODE", "local") or "local").strip()
     worker_state = os.path.abspath(
         str(
             environment.get(
@@ -210,7 +225,7 @@ def inspect_environment(
         environment.get("GENERATED_SOURCE_PATH", DEFAULT_GENERATED_SOURCE_PATH)
         or DEFAULT_GENERATED_SOURCE_PATH
     ).strip()
-    worker_ready = (
+    local_ready = (
         worker_mode == "local"
         and os.path.isdir(worker_state)
         and not os.path.islink(worker_state)
@@ -222,15 +237,45 @@ def inspect_environment(
         and network_mode == "disabled"
         and isolation is True
     )
+    remote_url = str(environment.get("UNITY_REMOTE_WORKER_URL", "") or "").strip()
+    remote_credential = str(
+        environment.get("UNITY_REMOTE_WORKER_CREDENTIAL", "") or ""
+    )
+    parsed_remote = urlparse(remote_url)
+    remote_transport_ready = (
+        parsed_remote.scheme == "https"
+        or (
+            parsed_remote.scheme == "http"
+            and _is_loopback_host(parsed_remote.hostname or "")
+        )
+    )
+    remote_ready = (
+        worker_mode == "remote"
+        and remote_transport_ready
+        and bool(parsed_remote.hostname)
+        and 32 <= len(remote_credential) <= 256
+        and os.path.isdir(worker_state)
+        and not os.path.islink(worker_state)
+        and not _path_within(worker_state, PROJECT_ROOT)
+        and not _path_within(worker_state, worker_generated_root)
+        and timeout is not None
+        and retention is not None
+        and network_mode in {"disabled", "allowlist"}
+    )
+    worker_ready = local_ready or remote_ready
     checks.append(
         _check(
             "Unity worker",
             worker_ready,
             "UNITY_WORKER_UNAVAILABLE",
             (
-                "local worker state ready; bounded timeout and enforced disabled network"
+                (
+                    "remote HTTPS worker configured; runtime capability verification required"
+                    if remote_ready
+                    else "local worker state ready; bounded timeout and enforced disabled network"
+                )
                 if worker_ready
-                else "configure local worker state, bounded retention/timeout, and enforced network isolation"
+                else "configure local isolation or an HTTPS remote worker with a dedicated credential"
             ),
         )
     )
@@ -314,6 +359,15 @@ def _path_within(path, root):
     resolved_root = os.path.realpath(os.path.abspath(root))
     try:
         return os.path.commonpath([resolved_path, resolved_root]) == resolved_root
+    except ValueError:
+        return False
+
+
+def _is_loopback_host(host):
+    if str(host).lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
 

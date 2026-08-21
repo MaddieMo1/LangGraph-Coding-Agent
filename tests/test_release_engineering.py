@@ -124,6 +124,37 @@ class ReleaseEngineeringTest(unittest.TestCase):
         self.assertEqual("UNITY_WORKER_UNAVAILABLE", worker["error_code"])
         self.assertNotIn(str(root), format_environment_report(result))
 
+    def test_remote_worker_preflight_requires_https_and_never_prints_credential(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            environment = self.configured_environment(root)
+            credential = "remote-worker-secret-that-must-never-be-printed"
+            environment.update({
+                "UNITY_WORKER_MODE": "remote",
+                "UNITY_REMOTE_WORKER_URL": "https://worker.example",
+                "UNITY_REMOTE_WORKER_CREDENTIAL": credential,
+                "UNITY_EDITOR_PATH": "",
+                "UNITY_TEST_PROJECT_PATH": "",
+            })
+            result = inspect_environment(
+                environment=environment,
+                python_version=(3, 11, 9),
+                git_tool_factory=FakeGitTool,
+            )
+
+        worker = next(check for check in result["checks"] if check["name"] == "Unity worker")
+        self.assertTrue(worker["success"])
+        self.assertNotIn(credential, format_environment_report(result))
+
+        environment["UNITY_REMOTE_WORKER_URL"] = "http://worker.example"
+        failed = inspect_environment(
+            environment=environment,
+            python_version=(3, 11, 9),
+            git_tool_factory=FakeGitTool,
+        )
+        worker = next(check for check in failed["checks"] if check["name"] == "Unity worker")
+        self.assertFalse(worker["success"])
+
     def test_offline_ci_runs_tests_compileall_and_diff_check(self):
         workflow = (ROOT / ".github" / "workflows" / "offline-ci.yml").read_text(
             encoding="utf-8"

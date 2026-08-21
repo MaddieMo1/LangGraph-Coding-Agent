@@ -46,6 +46,18 @@ def default_snapshot_builder():
 
 
 def default_worker_client():
+    if os.getenv("UNITY_WORKER_MODE", "local").strip().lower() == "remote":
+        from tools.remote_unity_worker_client import RemoteUnityWorkerClient
+
+        return RemoteUnityWorkerClient(
+            endpoint=os.getenv("UNITY_REMOTE_WORKER_URL", ""),
+            credential=os.getenv("UNITY_REMOTE_WORKER_CREDENTIAL", ""),
+            download_directory=(
+                Path(os.getenv("UNITY_WORKER_STATE_PATH", DEFAULT_WORKER_STATE_PATH))
+                / "remote-artifacts"
+            ),
+            timeout_seconds=_timeout_seconds(),
+        )
     return LocalUnityWorkerClient(
         state_path=os.getenv("UNITY_WORKER_STATE_PATH", DEFAULT_WORKER_STATE_PATH),
         unity_path=os.getenv("UNITY_EDITOR_PATH", DEFAULT_UNITY_PATH),
