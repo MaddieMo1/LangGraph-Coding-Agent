@@ -96,6 +96,9 @@ class AgentState(TypedDict):
     approval_status: str
     approved_changes: List[Dict[str, str]]
     generated_tests: List[Dict[str, Any]]
+    generated_editmode_tests: List[Dict[str, Any]]
+    generated_playmode_tests: List[Dict[str, Any]]
+    test_generation_schema_version: int
     test_generation_result: Dict[str, Any]
     test_generation_feedback: Dict[str, Any]
     test_generation_retry_count: int
