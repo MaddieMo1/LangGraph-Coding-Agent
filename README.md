@@ -30,7 +30,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
          代码修复 ───────┘
 ```
 
-## 📚 Day01～Day18 学习路线
+## 📚 Day01～Day19 学习路线
 
 仓库保留了从基础 Tool Agent 到 v1.0 工程化 Coding Agent 的完整演进过程。建议按顺序阅读各阶段 Notebook；Day04～Day06 同时保留了当时版本的配套源码和 Unity 示例工程，便于对照最终架构理解每一步的变化。
 
@@ -54,6 +54,7 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 | Day16 | Unity API 可信知识检索 | [Day16 Notebook](./day16/Day16.ipynb) |
 | Day17 | 审批审计与本地权限控制 | [Day17 Notebook](./day17/Day17.ipynb) |
 | Day18 | 团队只读观察、SSE 与断线续传 | [Day18 Notebook](./day18/Day18.ipynb) |
+| Day19 | 不可变 Unity 快照、隔离 Worker 与双模式测试 | [Day19 Notebook](./day19/Day19.ipynb) |
 
 > 说明：Day01～Day09 是早期学习快照，保留了当时的实现方式和部分运行输出。模型密钥统一从环境变量读取；涉及真实 Unity 工程的 Notebook 需要根据本机环境设置 `UNITY_EDITOR_PATH` 和 `UNITY_TEST_PROJECT_PATH`。缓存、`.env`、本地向量索引、运行时 JSON 和生成代码未纳入仓库。
 
@@ -393,6 +394,26 @@ OBSERVATION_ALLOW_INSECURE_HTTP=false
 
 [Day18 Notebook](./day18/Day18.ipynb) 可离线复核契约、事件投影、游标续传和多观察者在线状态；[Day18 发布说明](./docs/releases/day18-team-observation.md) 记录完整安全边界与验证证据。
 
+### Unity Worker（Day19）
+
+Day19 将 Unity 执行从控制器进程中分离。控制器构建不可变快照并依次执行 `compile → EditMode → PlayMode`；三个门禁都通过后，才会进入 Reviewer 和路径受限的本地 Git 提交。默认使用本机子进程 Worker，也可显式切换到固定 HTTPS API：
+
+```env
+UNITY_WORKER_MODE=local
+UNITY_WORKER_STATE_PATH=D:\path\to\runtime-state\unity-worker
+UNITY_WORKER_TIMEOUT_SECONDS=900
+UNITY_WORKER_NETWORK_MODE=disabled
+UNITY_WORKER_NETWORK_ISOLATION_ENFORCED=false
+
+# 仅在已部署独立 Worker 时使用
+UNITY_REMOTE_WORKER_URL=https://unity-worker.example.com
+UNITY_REMOTE_WORKER_CREDENTIAL=replace-with-a-unique-32-to-256-character-secret
+```
+
+远程适配器只接受固定的能力、提交、状态、取消、结果和白名单产物路由，使用时间戳、nonce、请求体摘要与 HMAC 签名；非回环地址强制 HTTPS。它不执行任意远程命令，不接受调用方传入 Unity 命令行或环境变量，也不会在不确定提交后自动回退到本机重投。`network=disabled` 只有在 Worker 明确证明操作系统或容器已强制隔离时才会接受。
+
+本地控制台与 `/observe` 只显示 Worker 模式、脱敏 ID、门禁、状态、耗时、测试计数和稳定错误码；凭据、URL、绝对路径、快照、源码、完整日志、命令、环境变量和 HMAC 材料不会进入观察投影。[Day19 发布说明](./docs/releases/day19-unity-worker.md) 将离线证据、真实本地 Unity 和真实远程 Worker 验收严格分开。
+
 启动前可执行只读环境预检：
 
 ```bash
@@ -563,9 +584,16 @@ python main.py
 - 远程路由没有审批、继续、重试、取消、Git、源码或 Diff 修改能力，投影失败也不会改变工作流结果；
 - Day18 Notebook 已离线执行 5 个代码单元且无错误；489 项完整 Python 回归测试、Python 编译和空白检查均已通过。
 
+### 🚧 Day19 — 实现完成，真实环境验收待执行
+
+- 定义不可变 Unity 快照、固定 Worker 作业/结果协议以及 `compile → EditMode → PlayMode` 双测试门禁；
+- 提供本地子进程 Worker 与显式启用的 HTTPS 远程适配器，拒绝任意命令、未知字段、越权产物和陈旧结果；
+- 控制台与团队观察面只显示严格白名单的 Worker 状态；
+- 离线验证、真实 Unity 2022.3 和独立远程 Worker 的证据分别记录，未执行项目保持 `PENDING`。
+
 ### 🔭 后续计划
 
-- Day19：更完整的 Unity 隔离执行与验证环境。
+- 完成 Day19 真实 Unity 2022.3 与独立 HTTPS Worker 环境验收后，再更新正式发布状态。
 
 ## 🤝 参与贡献
 
