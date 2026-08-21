@@ -1246,23 +1246,43 @@ body {
     background: #081321;
 }
 
+#primary-navigation > * {
+    flex: 0 0 96px !important;
+    width: 96px !important;
+    min-width: 96px !important;
+    max-width: 96px !important;
+}
+
 #primary-navigation button {
-    min-width: 88px;
+    width: 100% !important;
+    min-width: 0;
     min-height: 34px;
     border: 0 !important;
     color: #8192a8 !important;
     background: transparent !important;
 }
 
-#observation-nav { min-width: auto !important; }
+#observation-nav,
+#observation-nav .html-container,
+#observation-nav .prose {
+    width: 100% !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
 
 #observation-nav a {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 88px;
+    width: 100% !important;
+    height: 34px !important;
+    min-width: 0;
     min-height: 34px;
-    padding: 0 12px;
+    padding: 0;
     border-radius: 6px;
     color: #8192a8 !important;
     font-size: 14px;

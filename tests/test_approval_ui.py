@@ -1431,6 +1431,16 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("#task-selection-summary", APPROVAL_CSS)
         self.assertIn("background: transparent !important", APPROVAL_CSS)
 
+    def test_primary_navigation_items_use_equal_slots(self):
+        self.assertIn("#primary-navigation > * {", APPROVAL_CSS)
+        self.assertIn("flex: 0 0 96px !important", APPROVAL_CSS)
+        self.assertIn("width: 96px !important", APPROVAL_CSS)
+        self.assertIn("#observation-nav a", APPROVAL_CSS)
+        self.assertIn("width: 100% !important", APPROVAL_CSS)
+        self.assertIn("height: 34px !important", APPROVAL_CSS)
+        self.assertIn("#observation-nav .html-container", APPROVAL_CSS)
+        self.assertIn("#observation-nav .prose", APPROVAL_CSS)
+
     def test_task_detail_drawer_has_one_reachable_vertical_scroll_container(self):
         drawer_css = APPROVAL_CSS.split(
             "#task-detail-drawer,", 1
