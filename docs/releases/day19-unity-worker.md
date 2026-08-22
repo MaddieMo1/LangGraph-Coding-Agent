@@ -1,6 +1,6 @@
 # Day19：隔离 Unity Worker 与双模式验证
 
-状态：实现、离线验收和真实 HTTPS Worker 验收已完成；控制器上的独立本机 Worker 模式仍待单独验收。本文把可在仓库内复现的证据、真实本地 Unity 证据和真实远程 Worker 证据分开记录；未运行的探针必须保持 `PENDING`，不能由 fixture、loopback 测试或远程 Worker 内部的本机执行替代。
+状态：已完成。实现、离线回归、真实本机 Worker 和真实 HTTPS Worker 均已验收；本文将各层证据分开记录，不使用 fixture 或 loopback 测试替代真实环境证据。
 
 ## 实现范围
 
@@ -37,24 +37,21 @@ UNITY_REMOTE_WORKER_DATABASE=D:\path\to\runtime-state\unity-worker\remote-worker
 ### 离线证据
 
 - Notebook：2026-08-21 使用 `nbconvert --execute` 离线执行 7 个代码单元，检查为 0 个 error outputs；生成的 executed 副本检查后已删除。
-- Day19 专项：2026-08-22 执行计划列出的 11 个测试模块，76 项通过，耗时 1.688 秒。
-- 完整 Python 回归：2026-08-22 执行 `python -m unittest discover -s tests -p "test_*.py"`，573 项通过，耗时 23.560 秒；运行中存在既有 asyncio 资源告警和 `httpx2` 弃用告警，但没有测试失败。
+- Day19 专项：2026-08-22 执行计划列出的 11 个测试模块，76 项通过，耗时 1.722 秒。
+- 完整 Python 回归：2026-08-22 执行 `python -m unittest discover -s tests -p "test_*.py"`，573 项通过，耗时 23.068 秒；运行中存在既有 asyncio 资源告警和 `httpx2` 弃用告警，但没有测试失败。
 - `python -m compileall agents tools worker workflow memory ui tests` 与 `git diff --check` 通过。
 - 提交差异凭据/路径审计只命中示例占位值、固定测试 fixture、脱敏负例和既有默认 Unity 路径，没有发现实际凭据。
 - fixture 只证明契约、拒绝路径和状态机逻辑，不证明真实 Unity、真实 HTTPS 链路或强制网络隔离。
 
 ### 本地 Unity 证据
 
-- 状态：PENDING。
-- 环境预检：控制器上的 Unity Editor 可执行文件、Unity 测试工程和生成代码 Git 仓库均通过；独立本机 Worker 模式尚未运行完整验收。远程主机内部虽然使用相同的本机执行器，但不替代这一项。
-- Unity 2022.3 版本：PENDING。
-- compile 结果：PENDING。
-- EditMode 通过/总数：PENDING。
-- PlayMode 通过/总数：PENDING。
-- Reviewer 结果：PENDING。
-- sandbox 清理：PENDING。
-- 源工程前后指纹：PENDING。
-- 生成代码仓库分支与本地 commit：PENDING。
+- 状态：PASSED（2026-08-22，在已强制断开公网的 `172.16.10.71` 上直接调用 `LocalUnityWorkerClient`，未经过 HTTPS 适配器）。
+- Unity 版本：`2022.3.62f2c1`；使用与远程验收相同的固定快照 `529f7f4bc7e3b098b098207f6ed15119ec2ebd67ea6d523b8767c1e87e704add`。
+- compile 作业 `5025c14b...c1ab` 通过，结果 SHA-256 `0df20a0d1cedf409b96fd7d96fd53851f78aa5f1eaf9fbd06249d1c9cdb2602a`。
+- EditMode 作业 `1fb51d57...799f` 1/1 通过，耗时 0.0296658 秒，结果 SHA-256 `fd1f2da33335e9ae5624b49d4ee64636128f62c846f73c76384c7341defa4a6d`。
+- PlayMode 作业 `df3d8bbf...6680` 1/1 通过，耗时 0.0295132 秒，结果 SHA-256 `073b904136fbe99a0da54ccce3b9c3b6c7d038e33b4f9fa6ed6e97de0dcf2f9b`。
+- 三个作业严格按 compile、EditMode、PlayMode 顺序执行，`ordered=true`；每个结果均报告 `process_stopped=true`、`sandbox_removed=true`，并生成通过大小和 SHA-256 校验的 `unity-evidence.json`。
+- 源工程构建前后指纹一致；Reviewer 与路径限定本地 Git 提交结果见下方共享端到端证据。
 
 ### 真实远程 Worker 证据
 

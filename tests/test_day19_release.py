@@ -33,16 +33,17 @@ class Day19ReleaseTests(unittest.TestCase):
         ):
             self.assertIn(required, readme)
 
-    def test_release_evidence_is_layered_and_pending_claims_remain_pending(self):
+    def test_release_evidence_is_layered_and_records_real_acceptance(self):
         release = (ROOT / "docs" / "releases" / "day19-unity-worker.md").read_text(
             encoding="utf-8"
         )
         for required in (
             "离线证据", "本地 Unity 证据", "真实远程 Worker 证据",
-            "PENDING", "Unity 2022.3", "EditMode", "PlayMode",
-            "源工程前后指纹", "产物哈希", "网络隔离",
+            "PASSED", "LocalUnityWorkerClient", "2022.3.62f2c1", "EditMode", "PlayMode",
+            "源工程构建前后指纹", "unity-evidence.json", "网络隔离",
         ):
             self.assertIn(required, release)
+        self.assertNotIn("PENDING", release)
         self.assertNotIn("真实远程 Worker：已通过", release)
 
 

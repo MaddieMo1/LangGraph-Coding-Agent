@@ -584,16 +584,17 @@ python main.py
 - 远程路由没有审批、继续、重试、取消、Git、源码或 Diff 修改能力，投影失败也不会改变工作流结果；
 - Day18 Notebook 已离线执行 5 个代码单元且无错误；489 项完整 Python 回归测试、Python 编译和空白检查均已通过。
 
-### 🚧 Day19 — 实现完成，真实环境验收待执行
+### ✅ Day19 — 已完成（隔离 Unity Worker 与双模式验证）
 
 - 定义不可变 Unity 快照、固定 Worker 作业/结果协议以及 `compile → EditMode → PlayMode` 双测试门禁；
 - 提供本地子进程 Worker 与显式启用的 HTTPS 远程适配器，拒绝任意命令、未知字段、越权产物和陈旧结果；
 - 控制台与团队观察面只显示严格白名单的 Worker 状态；
-- 离线验证、真实 Unity 2022.3 和独立远程 Worker 的证据分别记录，未执行项目保持 `PENDING`。
+- 76 项 Day19 专项测试和 573 项完整 Python 回归测试通过；真实本机 Worker 与局域网独立 HTTPS Worker 均使用 Unity `2022.3.62f2c1` 完成 compile、EditMode 1/1、PlayMode 1/1 验收；
+- 独立 Worker 已验证操作系统防火墙网络隔离、HTTPS 证书、HMAC 请求签名、陈旧请求拒绝、幂等取消、沙箱清理和证据产物哈希，详细证据见发布说明。
 
 ### 🔭 后续计划
 
-- 完成 Day19 真实 Unity 2022.3 与独立 HTTPS Worker 环境验收后，再更新正式发布状态。
+- 在进入 Day20 前确定下一阶段目标，并继续保持真实环境证据与离线 fixture 分层记录。
 
 ## 🤝 参与贡献
 
