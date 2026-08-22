@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/LangGraph-Agent%20Workflow-orange" alt="LangGraph">
   <img src="https://img.shields.io/badge/Providers-DeepSeek%20%7C%20Kimi%20%7C%20Qwen%20%7C%20GLM-purple" alt="DeepSeek、Kimi、Qwen 与 GLM">
-  <img src="https://img.shields.io/badge/Version-v1.1.0-success" alt="版本 v1.1.0">
+  <img src="https://img.shields.io/badge/Version-v1.2.0-success" alt="版本 v1.2.0">
   <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT 许可证">
 </p>
 
@@ -557,6 +557,14 @@ python main.py
 - 增加同一服务内的团队只读观察、脱敏任务名称、SSE 断线续传、多观察者在线状态及本机控制面隔离；
 - 使用真实手机完成第二设备验收：观察页正常连接，局域网控制台根路径保持拒绝访问；
 - [v1.1.0 发布说明](./docs/releases/v1.1.0.md) 记录新增能力、安全边界、兼容性、验证证据与已知限制。
+
+### ✅ v1.2.0 — 已完成（Day19）
+
+- 使用不可变 Unity 项目快照固定版本、Package manifest、输入文件和 SHA-256；
+- 使用隔离本机 Worker 或受 HMAC 保护的 HTTPS Worker 依次执行 compile、EditMode 和 PlayMode；
+- 独立局域网 Worker 已完成真实证书、网络隔离、取消、陈旧请求拒绝、沙箱清理和产物完整性验收；
+- Reviewer 与路径限定本地 Git 门禁保持不变，不增加远程 push、merge 或部署能力；
+- [v1.2.0 发布说明](./docs/releases/v1.2.0.md) 记录完整能力、安全边界、兼容性和真实环境证据。
 
 ### ✅ Day16 — 已完成（Unity API 知识检索）
 

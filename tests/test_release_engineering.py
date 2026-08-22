@@ -66,8 +66,8 @@ class ReleaseEngineeringTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         ui = (ROOT / "ui" / "approval_app.py").read_text(encoding="utf-8")
 
-        self.assertEqual("1.1.0", __version__)
-        self.assertIn("Version-v1.1.0", readme)
+        self.assertEqual("1.2.0", __version__)
+        self.assertIn("Version-v1.2.0", readme)
         self.assertIn("python -m tools.environment_check", readme)
         self.assertIn("from project_version import __version__", ui)
         self.assertIn('f"LangGraph Coding Agent v{__version__}', ui)
