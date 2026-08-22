@@ -393,6 +393,42 @@ class UnityPlatformToolTest(unittest.TestCase):
 
 
 class UnityExecutorClassificationTest(unittest.TestCase):
+    def test_compile_excludes_generated_test_sources_from_production_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "Project"
+            generated = project / "Assets" / "Generated"
+            editmode = project / "Assets" / "Tests" / "EditMode"
+            playmode = project / "Assets" / "Tests" / "PlayMode"
+            for folder in (generated, editmode, playmode):
+                folder.mkdir(parents=True)
+            (generated / "Probe.cs").write_text("class Probe {}", encoding="utf-8")
+            (editmode / "ProbeTests.cs").write_text("using NUnit.Framework;", encoding="utf-8")
+            (playmode / "ProbePlayModeTests.cs").write_text(
+                "using UnityEngine.TestTools;", encoding="utf-8"
+            )
+            captured = {}
+
+            class FakeCompileTool:
+                def compile(self):
+                    captured["generated_exists"] = generated.is_file() or generated.is_dir()
+                    captured["editmode_exists"] = editmode.exists()
+                    captured["playmode_exists"] = playmode.exists()
+                    return {"success": True, "system_error": False, "errors": []}
+
+            executor = UnityExecutor(
+                "Unity.exe",
+                compile_tool_factory=lambda **kwargs: FakeCompileTool(),
+            )
+
+            outcome = executor.execute(
+                {"gate": "compile", "timeout_seconds": 30}, str(project)
+            )
+
+            self.assertEqual("passed", outcome["status"])
+            self.assertTrue(captured["generated_exists"])
+            self.assertFalse(captured["editmode_exists"])
+            self.assertFalse(captured["playmode_exists"])
+
     def test_maps_test_assertion_and_license_failures_to_distinct_owners(self):
         class FakeTool:
             def __init__(self, result):

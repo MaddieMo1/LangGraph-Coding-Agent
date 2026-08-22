@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from tools.unity_compile_tool import UnityCompileTool
 from tools.unity_test_tool import UnityTestTool
@@ -31,6 +32,11 @@ class UnityExecutor:
         gate = job.get("gate")
         timeout = job.get("timeout_seconds", 600)
         if gate == "compile":
+            for platform in ("EditMode", "PlayMode"):
+                shutil.rmtree(
+                    os.path.join(project_path, "Assets", "Tests", platform),
+                    ignore_errors=True,
+                )
             tool = self.compile_tool_factory(
                 unity_path=self.unity_path,
                 project_path=project_path,
