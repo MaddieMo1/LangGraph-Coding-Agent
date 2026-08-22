@@ -19,7 +19,11 @@ from agents.test_generator import TestGeneratorAgent
 from agents.code_checker import CodeCheckerAgent
 from agents.reviewer import ReviewerAgent
 from agents.repair import RepairAgent
-from agents.unity_compiler import compile_generated_sources, unity_compile_agent
+from agents.unity_compiler import (
+    compile_generated_sources,
+    unity_compile_agent,
+    unity_snapshot_agent,
+)
 from agents.unity_test import unity_test_agent
 from workflow.router import router
 from workflow.review_router import review_router
@@ -306,16 +310,7 @@ class AgentWorkflow:
 
     @staticmethod
     def _validation_passed(state):
-        review = state.get("review", {})
-        return (
-            state.get("code_check_result", {}).get("success", False)
-            and state.get("compile_result", {}).get("success", False)
-            and state.get("test_result", {}).get("success", False)
-            and isinstance(review, dict)
-            and review.get("pass", False)
-            and review.get("score", 0) >= 90
-            and not review.get("remaining_issues", [])
-        )
+        return GitAgent._validation_passed(state)
 
     def _record_system_audit(
         self,
@@ -453,6 +448,10 @@ class AgentWorkflow:
         return {**result, **self.long_term_memory.observe_compile(result)}
 
 
+    def unity_snapshot_node(self, state):
+        return unity_snapshot_agent(state)
+
+
     def unity_knowledge_node(self, state):
         return self.unity_knowledge.run(state)
 
@@ -586,6 +585,13 @@ class AgentWorkflow:
             {}
         )
 
+        snapshot_sha256 = state.get("unity_snapshot", {}).get("snapshot_sha256", "")
+        if state.get("unity_worker_mode") and (
+            not snapshot_sha256
+            or compile_result.get("snapshot_sha256", snapshot_sha256) != snapshot_sha256
+        ):
+            return "finish_task"
+
 
         if compile_result.get(
             "system_error",
@@ -605,11 +611,24 @@ class AgentWorkflow:
         return "reviewer"
 
 
+    def unity_snapshot_router(self, state):
+        return "unity_compiler" if state.get("unity_snapshot") else "finish_task"
+
+
     def unity_test_router(self,state):
         test_result = state.get("test_result", {})
-        if test_result.get("error_code") == "TEST_ASSEMBLY_COMPILE_ERROR":
+        platform_results = (
+            state.get("editmode_test_result", {}) or {},
+            state.get("playmode_test_result", {}) or {},
+        )
+        if test_result.get("error_code") == "TEST_ASSEMBLY_COMPILE_ERROR" or any(
+            result.get("error_code") == "TEST_ASSEMBLY_COMPILE_ERROR"
+            for result in platform_results
+        ):
             return "finish_task"
-        if test_result.get("system_error", False):
+        if test_result.get("system_error", False) or any(
+            result.get("system_error", False) for result in platform_results
+        ):
             return "finish_task"
         return "reviewer"
 
@@ -742,6 +761,11 @@ class AgentWorkflow:
         self.workflow.add_node(
             "unity_compiler",
             self.unity_compiler_node
+        )
+
+        self.workflow.add_node(
+            "unity_snapshot",
+            self.unity_snapshot_node
         )
 
         self.workflow.add_node(
@@ -897,7 +921,16 @@ class AgentWorkflow:
         # Code Checker
         self.workflow.add_edge(
             "code_checker",
-            "unity_compiler"
+            "unity_snapshot"
+        )
+
+        self.workflow.add_conditional_edges(
+            "unity_snapshot",
+            self.unity_snapshot_router,
+            {
+                "unity_compiler": "unity_compiler",
+                "finish_task": "finish_task",
+            }
         )
 
 

@@ -10,7 +10,7 @@ import gradio as gr
 from project_version import __version__
 from tools.approval_policy import ApprovalPolicy
 from tools.unity_test_tool import is_test_assembly_compile_failure
-from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state
+from ui.view_state import MODE_LABELS, layout_for_mode, map_agent_state, worker_validation_view
 
 
 APPROVAL_CSS = """
@@ -3150,7 +3150,8 @@ def format_execution_panel(view):
         ("Unity 基线", view.get("baseline_compile_status", "")),
         ("静态检查", view.get("code_check_status", "")),
         ("Unity 编译", view.get("compile_status", "")),
-        ("EditMode 测试", view.get("test_status", "")),
+        ("EditMode 测试", view.get("editmode_test_status", view.get("test_status", ""))),
+        ("PlayMode 测试", view.get("playmode_test_status", "")),
         ("代码审查", view.get("review_status", "")),
         ("本地 Git", view.get("git_status", "")),
     ]
@@ -3172,6 +3173,30 @@ def format_execution_panel(view):
             ("Repair", "repair_summary"),
         )
     )
+    worker = view.get("worker_validation", {}) or {}
+    editmode = worker.get("editmode", {}) or {}
+    playmode = worker.get("playmode", {}) or {}
+    worker_details = "".join(
+        '<div class="detail-row">'
+        f'<span>{escape(label)}</span><strong>{escape(str(value or "—"))}</strong>'
+        "</div>"
+        for label, value in (
+            ("Worker 模式", worker.get("mode", "")),
+            ("Worker ID", worker.get("worker_id", "")),
+            ("Worker 门禁", worker.get("gate", "")),
+            ("Worker 状态", worker.get("status", "")),
+            ("Worker 历时", f'{worker.get("elapsed_seconds", 0)}s'),
+            ("Worker 错误码", worker.get("error_code", "")),
+            ("EditMode 计数", (
+                f'{editmode.get("passed", 0)}/{editmode.get("total", 0)} passed · '
+                f'{editmode.get("failed", 0)} failed · {editmode.get("skipped", 0)} skipped'
+            )),
+            ("PlayMode 计数", (
+                f'{playmode.get("passed", 0)}/{playmode.get("total", 0)} passed · '
+                f'{playmode.get("failed", 0)} failed · {playmode.get("skipped", 0)} skipped'
+            )),
+        )
+    ) if worker else ""
     started_at = str(view.get("started_at", "") or "")
     ended_at = str(view.get("ended_at", "") or "")
     elapsed = format_elapsed_time(started_at, ended_at)
@@ -3196,7 +3221,7 @@ def format_execution_panel(view):
         f'<div class="review-copy">当前节点 · {escape(current)}</div>'
         "</div>"
         f'{error_html}<div class="gate-grid">{gates}</div>'
-        f'<div class="detail-grid">{timing_details}{details}</div>'
+        f'<div class="detail-grid">{timing_details}{worker_details}{details}</div>'
         f'<div class="recovery-copy">{escape(view.get("recovery_hint", ""))}</div>'
         '<div class="execution-boundary">只创建本地任务分支与提交；不执行 push、PR、merge、rebase 或 reset。</div>'
     )
@@ -3881,6 +3906,9 @@ class ApprovalController:
             "code_check_status": result_status(result.get("code_check_result", {})),
             "compile_status": result_status(result.get("compile_result", {})),
             "test_status": result_status(result.get("test_result", {})),
+            "editmode_test_status": result_status(result.get("editmode_test_result", {})),
+            "playmode_test_status": result_status(result.get("playmode_test_result", {})),
+            "worker_validation": worker_validation_view(result),
             "review_status": result_status(result.get("review", {}), pass_key="pass"),
             "repair_context": repair_review_context(result),
             **workflow_summaries(result),

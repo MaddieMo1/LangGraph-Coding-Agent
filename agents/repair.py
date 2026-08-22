@@ -339,6 +339,11 @@ class RepairAgent:
             strategy,
             memory_context,
             (getattr(self, "_routing_state", None) or {}).get("unity_knowledge", {}),
+            {
+                "compile": (getattr(self, "_routing_state", None) or {}).get("compile_result", {}),
+                "EditMode": (getattr(self, "_routing_state", None) or {}).get("editmode_test_result", {}),
+                "PlayMode": (getattr(self, "_routing_state", None) or {}).get("playmode_test_result", {}),
+            },
         )
 
 

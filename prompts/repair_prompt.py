@@ -12,6 +12,7 @@ def repair_prompt(
     strategy="",
     memory_context=None,
     unity_knowledge=None,
+    validation_evidence=None,
 ):
     """
     生成代码修复Prompt
@@ -28,6 +29,7 @@ def repair_prompt(
     """
 
     memory_context = memory_context or {}
+    validation_evidence = validation_evidence or {}
     knowledge_json = json.dumps(
         build_prompt_knowledge(unity_knowledge or {}),
         ensure_ascii=False,
@@ -42,6 +44,10 @@ def repair_prompt(
 当前代码未通过至少一个质量门禁。
 
 你需要一次性分析并修复所有问题。
+
+当前 Compile、EditMode、PlayMode 验证证据（只修复代码/断言失败，不得把 Worker 系统错误当作代码错误）：
+
+{validation_evidence}
 
 
 =========================

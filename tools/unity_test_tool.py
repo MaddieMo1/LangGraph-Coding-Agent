@@ -43,8 +43,12 @@ def is_test_assembly_compile_failure(result):
     )
 
 
+class UnityTestCancelled(Exception):
+    pass
+
+
 class UnityTestTool:
-    """Run Unity EditMode tests in an isolated copy of the target project."""
+    """Run Unity EditMode or PlayMode tests in an isolated project copy."""
 
     def __init__(
         self,
@@ -56,7 +60,11 @@ class UnityTestTool:
         keep_sandbox=False,
         process_factory=None,
         result_grace=3.0,
+        platform="EditMode",
+        cancel_requested=None,
     ):
+        if platform not in {"EditMode", "PlayMode"}:
+            raise ValueError("platform must be EditMode or PlayMode")
         self.unity_path = os.path.realpath(os.path.abspath(unity_path))
         self.project_path = os.path.realpath(os.path.abspath(project_path))
         self.production_source_path = os.path.realpath(
@@ -67,6 +75,8 @@ class UnityTestTool:
         self.keep_sandbox = keep_sandbox
         self.process_factory = process_factory or subprocess.Popen
         self.result_grace = result_grace
+        self.platform = platform
+        self.cancel_requested = cancel_requested or (lambda: False)
 
     def run(self):
         environment_error = self._validate_environment()
@@ -75,8 +85,9 @@ class UnityTestTool:
 
         sandbox_root = tempfile.mkdtemp(prefix="coding-agent-unity-tests-")
         sandbox_project = os.path.join(sandbox_root, "Project")
-        results_path = os.path.join(sandbox_root, "test-results.xml")
-        log_path = os.path.join(sandbox_root, "unity-test.log")
+        platform_name = self.platform.lower()
+        results_path = os.path.join(sandbox_root, f"{platform_name}-test-results.xml")
+        log_path = os.path.join(sandbox_root, f"unity-{platform_name}-test.log")
         result = None
         production_files = []
         test_files = []
@@ -90,7 +101,7 @@ class UnityTestTool:
                 "-nographics",
                 "-runTests",
                 "-testPlatform",
-                "EditMode",
+                self.platform,
                 "-projectPath",
                 sandbox_project,
                 "-testResults",
@@ -117,10 +128,17 @@ class UnityTestTool:
                             "exit_code": exit_code,
                         }
                     )
+                elif "No valid Unity Editor license found" in raw:
+                    result = self._system_error(
+                        "Unity Editor license is unavailable",
+                        raw,
+                        "UNITY_LICENSE_UNAVAILABLE",
+                    )
                 else:
                     result = self._system_error(
                         f"Unity Test Runner did not create result XML (exit code {exit_code})",
                         raw,
+                        "TEST_RESULT_MISSING",
                     )
             else:
                 try:
@@ -129,7 +147,7 @@ class UnityTestTool:
                     parsed.update(
                         {
                             "system_error": False,
-                            "platform": "EditMode",
+                            "platform": self.platform,
                             "production_files": production_files,
                             "test_files": test_files,
                             "exit_code": exit_code,
@@ -143,7 +161,15 @@ class UnityTestTool:
                     result = self._system_error(
                         f"Unable to parse Unity test result XML: {error}",
                         raw,
+                        "TEST_RESULT_INVALID",
                     )
+        except UnityTestCancelled:
+            raw = self._read_log(log_path)
+            result = self._system_error(
+                "Unity tests were cancelled",
+                raw,
+                "WORKER_CANCELLED",
+            )
         except subprocess.TimeoutExpired:
             raw = self._read_log(log_path)
             if os.path.isfile(results_path):
@@ -153,7 +179,7 @@ class UnityTestTool:
                     parsed.update(
                         {
                             "system_error": False,
-                            "platform": "EditMode",
+                            "platform": self.platform,
                             "production_files": production_files,
                             "test_files": test_files,
                             "exit_code": None,
@@ -166,11 +192,13 @@ class UnityTestTool:
                     result = self._system_error(
                         f"Unity tests timed out and result XML was invalid: {error}",
                         raw,
+                        "TEST_RESULT_INVALID",
                     )
             else:
                 result = self._system_error(
                     f"Unity tests timed out after {self.timeout} seconds",
                     raw,
+                    "TEST_TIMEOUT",
                 )
         except (OSError, ValueError) as error:
             result = self._system_error(str(error))
@@ -244,6 +272,9 @@ class UnityTestTool:
 
         while True:
             exit_code = process.poll()
+            if self.cancel_requested():
+                self._stop_process(process)
+                raise UnityTestCancelled()
             if self._valid_result_xml(results_path):
                 if result_ready_at is None:
                     result_ready_at = time.monotonic()
@@ -301,11 +332,14 @@ class UnityTestTool:
 
     def _prepare_sources(self, sandbox_project):
         generated_target = os.path.join(sandbox_project, "Assets", "Generated")
-        tests_target = os.path.join(sandbox_project, "Assets", "Tests", "EditMode")
+        editmode_target = os.path.join(sandbox_project, "Assets", "Tests", "EditMode")
+        playmode_target = os.path.join(sandbox_project, "Assets", "Tests", "PlayMode")
+        tests_target = editmode_target if self.platform == "EditMode" else playmode_target
         if os.path.isdir(generated_target):
             shutil.rmtree(generated_target)
-        if os.path.isdir(tests_target):
-            shutil.rmtree(tests_target)
+        for managed_target in (editmode_target, playmode_target):
+            if os.path.isdir(managed_target):
+                shutil.rmtree(managed_target)
         os.makedirs(generated_target)
         os.makedirs(tests_target)
 
@@ -320,16 +354,26 @@ class UnityTestTool:
                 "autoReferenced": True,
             },
         )
-        self._write_json(
-            os.path.join(tests_target, "CodingAgent.Generated.Tests.asmdef"),
-            {
-                "name": "CodingAgent.Generated.Tests",
+        if self.platform == "EditMode":
+            test_assembly_name = "CodingAgent.Generated.Tests"
+            test_assembly_file = "CodingAgent.Generated.Tests.asmdef"
+            test_assembly = {
+                "name": test_assembly_name,
                 "references": ["CodingAgent.Generated"],
                 "includePlatforms": ["Editor"],
                 "optionalUnityReferences": ["TestAssemblies"],
                 "autoReferenced": False,
-            },
-        )
+            }
+        else:
+            test_assembly_name = "CodingAgent.Generated.PlayModeTests"
+            test_assembly_file = "CodingAgent.Generated.PlayModeTests.asmdef"
+            test_assembly = {
+                "name": test_assembly_name,
+                "references": ["CodingAgent.Generated"],
+                "optionalUnityReferences": ["TestAssemblies"],
+                "autoReferenced": False,
+            }
+        self._write_json(os.path.join(tests_target, test_assembly_file), test_assembly)
         return production_files, test_files
 
     @staticmethod
@@ -372,12 +416,11 @@ class UnityTestTool:
         with open(path, "r", encoding="utf-8", errors="replace") as file:
             return file.read()
 
-    @staticmethod
-    def _system_error(message, raw=""):
+    def _system_error(self, message, raw="", error_code="SYSTEM_ERROR"):
         return {
             "success": False,
             "system_error": True,
-            "platform": "EditMode",
+            "platform": self.platform,
             "summary": {
                 "total": 0,
                 "passed": 0,
@@ -387,7 +430,15 @@ class UnityTestTool:
                 "duration": 0.0,
             },
             "tests": [],
-            "errors": [{"test": "", "message": message, "stack_trace": ""}],
+            "error_code": error_code,
+            "errors": [
+                {
+                    "test": "",
+                    "code": error_code,
+                    "message": message,
+                    "stack_trace": "",
+                }
+            ],
             "production_files": [],
             "test_files": [],
             "exit_code": None,
@@ -396,13 +447,12 @@ class UnityTestTool:
             "sandbox_cleaned": True,
         }
 
-    @staticmethod
-    def _compilation_error(errors, raw=""):
+    def _compilation_error(self, errors, raw=""):
         return {
             "success": False,
             "system_error": False,
             "error_code": "TEST_ASSEMBLY_COMPILE_ERROR",
-            "platform": "EditMode",
+            "platform": self.platform,
             "summary": {
                 "total": 0,
                 "passed": 0,

@@ -1,19 +1,14 @@
 from pathlib import Path
 import unittest
 
-from project_version import __version__
-
-
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_PATH = ROOT / "docs" / "releases" / "v1.1.0.md"
 
 
 class V110ReleaseTests(unittest.TestCase):
-    def test_version_badge_and_release_link_are_consistent(self):
+    def test_historical_release_link_remains_available(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual("1.1.0", __version__)
-        self.assertIn("Version-v1.1.0", readme)
         self.assertIn("docs/releases/v1.1.0.md", readme)
         self.assertIn("v1.1.0 — 已完成（Day16～Day18）", readme)
 

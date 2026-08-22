@@ -96,6 +96,9 @@ class AgentState(TypedDict):
     approval_status: str
     approved_changes: List[Dict[str, str]]
     generated_tests: List[Dict[str, Any]]
+    generated_editmode_tests: List[Dict[str, Any]]
+    generated_playmode_tests: List[Dict[str, Any]]
+    test_generation_schema_version: int
     test_generation_result: Dict[str, Any]
     test_generation_feedback: Dict[str, Any]
     test_generation_retry_count: int
@@ -161,6 +164,14 @@ class AgentState(TypedDict):
     compile_history: List[Dict[str, Any]]
     test_result: Dict[str, Any]
     test_history: List[Dict[str, Any]]
+    unity_snapshot: Dict[str, Any]
+    unity_worker_mode: str
+    unity_worker_jobs: List[Dict[str, Any]]
+    editmode_test_result: Dict[str, Any]
+    playmode_test_result: Dict[str, Any]
+    editmode_test_history: List[Dict[str, Any]]
+    playmode_test_history: List[Dict[str, Any]]
+    unity_validation_status: str
 
 
     # =========================

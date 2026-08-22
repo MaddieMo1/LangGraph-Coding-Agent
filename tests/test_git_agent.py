@@ -45,11 +45,24 @@ class GitAgentTest(unittest.TestCase):
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def _success_state(self, changes):
+        snapshot_sha256 = "a" * 64
         return {
             "query": "创建背包系统",
             "approved_changes": changes,
             "code_check_result": {"success": True},
-            "compile_result": {"success": True},
+            "unity_snapshot": {"snapshot_sha256": snapshot_sha256},
+            "compile_result": {
+                "success": True, "snapshot_sha256": snapshot_sha256,
+                "worker_status": "passed", "job_id": "b" * 64,
+            },
+            "editmode_test_result": {
+                "success": True, "snapshot_sha256": snapshot_sha256,
+                "worker_status": "passed", "job_id": "c" * 64,
+            },
+            "playmode_test_result": {
+                "success": True, "snapshot_sha256": snapshot_sha256,
+                "worker_status": "passed", "job_id": "d" * 64,
+            },
             "test_result": {"success": True},
             "review": {"pass": True, "score": 95, "remaining_issues": []},
             "approval_history": [{"source": "coder", "status": "approved"}],
@@ -74,7 +87,7 @@ class GitAgentTest(unittest.TestCase):
 
     def test_commit_requires_every_validation_gate(self):
         state = self._success_state([])
-        state["test_result"] = {"success": False}
+        state["playmode_test_result"] = {"success": False, "snapshot_sha256": "a" * 64}
 
         result = self.agent.commit(state)
 

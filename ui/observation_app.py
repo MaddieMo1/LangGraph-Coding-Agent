@@ -81,6 +81,7 @@ OBSERVATION_HTML = """
       <div class="observation-card"><div class="observation-label">断线游标</div><div class="observation-value" id="observation-cursor">0</div></div>
       <div class="observation-card"><div class="observation-label">诊断摘要</div><div class="observation-value" id="observation-diagnostic">—</div></div>
       <div class="observation-card"><div class="observation-label">质量门禁</div><div class="observation-value" id="observation-gates">—</div></div>
+      <div class="observation-card"><div class="observation-label">Unity Worker</div><div class="observation-value" id="observation-worker">—</div></div>
       <div class="observation-card"><div class="observation-label">最终产物</div><div class="observation-value" id="observation-artifacts">—</div></div>
     </div>
   </section>
@@ -104,6 +105,7 @@ OBSERVATION_JS = r"""
     text("observation-approval-owner", snapshot.approval_owner_id || "—");
     text("observation-diagnostic", [snapshot.diagnostic?.error_code, snapshot.diagnostic?.summary].filter(Boolean).join(" · ") || "—");
     text("observation-gates", JSON.stringify(snapshot.gates || {}));
+    text("observation-worker", JSON.stringify(snapshot.gates?.unity_worker || {}));
     text("observation-artifacts", JSON.stringify(snapshot.artifacts || {}));
   };
 

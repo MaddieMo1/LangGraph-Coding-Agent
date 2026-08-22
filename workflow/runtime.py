@@ -417,9 +417,13 @@ class WorkflowRuntime:
                 "test_generation_resume_source": resume_source,
                 "test_generation_result": {},
                 "generated_tests": [],
+                "generated_editmode_tests": [],
+                "generated_playmode_tests": [],
                 "test_generation_feedback": feedback,
                 "test_generation_retry_count": retry_count,
                 "test_result": {} if test_retry else test_result,
+                "editmode_test_result": {} if test_retry else state.get("editmode_test_result", {}),
+                "playmode_test_result": {} if test_retry else state.get("playmode_test_result", {}),
                 "compile_result": {} if production_test_files else state.get("compile_result", {}),
                 "review": {} if test_retry else state.get("review", {}),
                 "root_causes": [] if test_retry else state.get("root_causes", []),
@@ -845,12 +849,21 @@ class WorkflowRuntime:
             return False
         compile_result = state.get("compile_result", {}) or {}
         test_result = state.get("test_result", {}) or {}
-        if compile_result.get("system_error") or test_result.get("system_error"):
+        platform_results = (
+            state.get("editmode_test_result", {}) or {},
+            state.get("playmode_test_result", {}) or {},
+        )
+        if (
+            compile_result.get("system_error")
+            or test_result.get("system_error")
+            or any(result.get("system_error") for result in platform_results)
+        ):
             return False
         failed_results = (
             state.get("code_check_result", {}),
             compile_result,
             test_result,
+            *platform_results,
         )
         code_gate_failed = any(
             isinstance(result, dict)
@@ -945,6 +958,8 @@ class WorkflowRuntime:
         code_check_result = values.get("code_check_result", {}) or {}
         compile_result = values.get("compile_result", {}) or {}
         test_result = values.get("test_result", {}) or {}
+        editmode_result = values.get("editmode_test_result", {}) or {}
+        playmode_result = values.get("playmode_test_result", {}) or {}
         test_summary = test_result.get("summary", {}) or {}
         review = values.get("review", {}) or {}
         git_result = values.get("git_result", {}) or {}
@@ -960,13 +975,19 @@ class WorkflowRuntime:
                 failed_gate = str(model_error.get("role", "") or "model")
                 error = WorkflowRuntime._result_error_summary(model_error)
             else:
-                checks = (
+                checks = [
                     ("test_generator", "test_generation_result", "success"),
                     ("code_checker", "code_check_result", "success"),
                     ("unity_compiler", "compile_result", "success"),
-                    ("unity_test", "test_result", "success"),
-                    ("reviewer", "review", "pass"),
-                )
+                ]
+                if editmode_result or playmode_result:
+                    checks.extend([
+                        ("unity_editmode", "editmode_test_result", "success"),
+                        ("unity_playmode", "playmode_test_result", "success"),
+                    ])
+                else:
+                    checks.append(("unity_test", "test_result", "success"))
+                checks.append(("reviewer", "review", "pass"))
                 for gate, key, pass_key in checks:
                     result = values.get(key, {}) or {}
                     if isinstance(result, dict) and result and result.get(pass_key) is False:
@@ -1005,6 +1026,8 @@ class WorkflowRuntime:
             "code_check_passed": code_check_result.get("success"),
             "compile_passed": compile_result.get("success"),
             "test_passed": test_result.get("success"),
+            "editmode_test_passed": editmode_result.get("success"),
+            "playmode_test_passed": playmode_result.get("success"),
             "test_total": test_summary.get("total"),
             "test_passed_count": test_summary.get("passed"),
             "review_passed": review.get("pass"),

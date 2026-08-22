@@ -36,8 +36,10 @@ class TestGeneratorAgentTest(unittest.TestCase):
 
     def test_generates_tests_from_structured_response(self):
         llm = FakeLLM(
-            '```json\n{"tests":[{"name":"InventoryTests.cs",'
-            '"content":"public class InventoryTests {}"}]}\n```'
+            '```json\n{"editmode_tests":[{"name":"InventoryTests.cs",'
+            '"content":"public class InventoryTests {}"}],'
+            '"playmode_tests":[{"name":"InventoryPlayModeTests.cs",'
+            '"content":"public class InventoryPlayModeTests {}"}]}\n```'
         )
         agent = TestGeneratorAgent(llm, self.tool)
 
@@ -74,8 +76,10 @@ class TestGeneratorAgentTest(unittest.TestCase):
         llm = SequenceLLM(
             [
                 '{"tests":[{"name":"BrokenTests.cs","content":"unterminated}',
-                '{"tests":[{"name":"InventoryTests.cs",'
-                '"content":"public class InventoryTests {}"}]}',
+                '{"editmode_tests":[{"name":"InventoryTests.cs",'
+                '"content":"public class InventoryTests {}"}],'
+                '"playmode_tests":[{"name":"InventoryPlayModeTests.cs",'
+                '"content":"public class InventoryPlayModeTests {}"}]}',
             ]
         )
 
@@ -89,7 +93,10 @@ class TestGeneratorAgentTest(unittest.TestCase):
         self.assertIn("previous response", llm.prompts[1])
 
     def test_does_not_retry_a_tool_validation_failure(self):
-        llm = SequenceLLM(['{"tests":[{"name":"../Unsafe.cs","content":"x"}]}'])
+        llm = SequenceLLM([
+            '{"editmode_tests":[{"name":"../Unsafe.cs","content":"x"}],'
+            '"playmode_tests":[{"name":"SafePlayModeTests.cs","content":"x"}]}'
+        ])
 
         result = TestGeneratorAgent(llm, self.tool).run(
             {"query": "demo", "code": [], "agent_history": []}
@@ -102,8 +109,10 @@ class TestGeneratorAgentTest(unittest.TestCase):
 
     def test_retry_prompt_contains_test_compilation_diagnostics(self):
         llm = FakeLLM(
-            '{"tests":[{"name":"DragEventsTests.cs",'
-            '"content":"public class DragEventsTests {}"}]}'
+            '{"editmode_tests":[{"name":"DragEventsTests.cs",'
+            '"content":"public class DragEventsTests {}"}],'
+            '"playmode_tests":[{"name":"DragEventsPlayModeTests.cs",'
+            '"content":"public class DragEventsPlayModeTests {}"}]}'
         )
         agent = TestGeneratorAgent(llm, self.tool)
 
@@ -139,8 +148,10 @@ class TestGeneratorAgentTest(unittest.TestCase):
 
     def test_limits_generation_context_to_approved_task_files(self):
         llm = FakeLLM(
-            '{"tests":[{"name":"DragEventsTests.cs",'
-            '"content":"public class DragEventsTests {}"}]}'
+            '{"editmode_tests":[{"name":"DragEventsTests.cs",'
+            '"content":"public class DragEventsTests {}"}],'
+            '"playmode_tests":[{"name":"DragEventsPlayModeTests.cs",'
+            '"content":"public class DragEventsPlayModeTests {}"}]}'
         )
 
         result = TestGeneratorAgent(llm, self.tool).run(

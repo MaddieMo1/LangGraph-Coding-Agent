@@ -295,10 +295,33 @@ class GitAgent:
     @staticmethod
     def _validation_passed(state):
         review = state.get("review", {})
+        snapshot_sha256 = state.get("unity_snapshot", {}).get("snapshot_sha256", "")
+        compile_result = state.get("compile_result", {})
+        editmode_result = state.get("editmode_test_result", {})
+        playmode_result = state.get("playmode_test_result", {})
         return (
             state.get("code_check_result", {}).get("success", False)
-            and state.get("compile_result", {}).get("success", False)
-            and state.get("test_result", {}).get("success", False)
+            and bool(snapshot_sha256)
+            and compile_result.get("success", False)
+            and editmode_result.get("success", False)
+            and playmode_result.get("success", False)
+            and all(
+                result.get("snapshot_sha256") == snapshot_sha256
+                for result in (compile_result, editmode_result, playmode_result)
+            )
+            and all(
+                result.get("worker_status") == "passed"
+                and len(str(result.get("job_id", ""))) == 64
+                and all(
+                    character in "0123456789abcdef"
+                    for character in str(result.get("job_id", ""))
+                )
+                for result in (compile_result, editmode_result, playmode_result)
+            )
+            and not any(
+                result.get("system_error", False)
+                for result in (compile_result, editmode_result, playmode_result)
+            )
             and isinstance(review, dict)
             and review.get("pass", False)
             and review.get("score", 0) >= 90

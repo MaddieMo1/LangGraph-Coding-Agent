@@ -69,6 +69,11 @@ def review_router(state):
         "success",
         False
     )
+    if state.get("editmode_test_result") or state.get("playmode_test_result"):
+        test_success = (
+            state.get("editmode_test_result", {}).get("success", False)
+            and state.get("playmode_test_result", {}).get("success", False)
+        )
 
     repair_count = state.get(
         "repair_count",
@@ -79,6 +84,14 @@ def review_router(state):
         "review_retry_count",
         0
     )
+
+    if (
+        state.get("compile_result", {}).get("system_error", False)
+        or test_result.get("system_error", False)
+        or state.get("editmode_test_result", {}).get("system_error", False)
+        or state.get("playmode_test_result", {}).get("system_error", False)
+    ):
+        return "finish_task"
 
     print(
         f"[Review Router]评分:{score},问题数量:{len(issues)},修复次数:{repair_count},Review重试:{review_retry_count}"

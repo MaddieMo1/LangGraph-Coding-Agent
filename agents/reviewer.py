@@ -4,6 +4,7 @@
 import json
 import re
 
+from agents.unity_test import aggregate_test_results
 from prompts.reviewer_prompt import get_reviewer_prompt
 from llm.invocation import invoke_model, model_state_update
 
@@ -74,10 +75,13 @@ class ReviewerAgent:
             {}
         )
 
-        test_result = state.get(
-            "test_result",
-            {}
-        )
+        if state.get("editmode_test_result") or state.get("playmode_test_result"):
+            test_result = aggregate_test_results(
+                state.get("editmode_test_result", {}),
+                state.get("playmode_test_result", {}),
+            )
+        else:
+            test_result = state.get("test_result", {})
 
 
         prompt = get_reviewer_prompt(

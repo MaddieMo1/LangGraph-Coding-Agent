@@ -1,5 +1,8 @@
 """Pure mapping from workflow state to the user-visible UI state."""
 
+from datetime import datetime, timezone
+import re
+
 
 MODE_LABELS = {
     "preflight": "环境检查",
@@ -22,7 +25,89 @@ VALIDATION_AGENTS = {
     "reviewer",
     "repair",
     "git_commit",
+    "unity_snapshot",
+    "unity_editmode",
+    "unity_playmode",
 }
+
+WORKER_STATUSES = {
+    "queued", "running", "cancelling", "passed", "failed",
+    "cancelled", "timed_out", "crashed", "rejected",
+}
+WORKER_GATES = {"snapshot", "compile", "editmode", "playmode"}
+SAFE_VALUE_PATTERN = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+
+
+def _safe_value(value, allowed=None):
+    value = str(value or "").strip().lower() if allowed else str(value or "").strip()
+    if allowed is not None:
+        return value if value in allowed else ""
+    return value if SAFE_VALUE_PATTERN.fullmatch(value) else ""
+
+
+def _bounded_count(value):
+    try:
+        return min(max(int(value or 0), 0), 1_000_000)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
+def _test_summary(result):
+    result = result if isinstance(result, dict) else {}
+    summary = result.get("summary", {}) or {}
+    status = _safe_value(result.get("worker_status"), WORKER_STATUSES)
+    if not status and result:
+        status = "passed" if result.get("success") else "failed"
+    return {
+        "status": status,
+        "total": _bounded_count(summary.get("total")),
+        "passed": _bounded_count(summary.get("passed")),
+        "failed": _bounded_count(summary.get("failed")),
+        "skipped": _bounded_count(summary.get("skipped")),
+        "error_code": _safe_value(result.get("error_code")),
+    }
+
+
+def worker_validation_view(state, now=None):
+    """Return the exact safe Worker projection used by local and observer UIs."""
+
+    state = state if isinstance(state, dict) else {}
+    jobs = state.get("unity_worker_jobs", []) or []
+    job = jobs[-1] if jobs and isinstance(jobs[-1], dict) else {}
+    gate = _safe_value(job.get("gate"), WORKER_GATES)
+    result = state.get({
+        "compile": "compile_result",
+        "editmode": "editmode_test_result",
+        "playmode": "playmode_test_result",
+    }.get(gate, ""), {}) or {}
+    status = _safe_value(job.get("status") or result.get("worker_status"), WORKER_STATUSES)
+    start = _timestamp(job.get("started_at") or result.get("started_at"))
+    finish = _timestamp(job.get("finished_at") or result.get("finished_at"))
+    current = now or datetime.now(timezone.utc)
+    if isinstance(current, str):
+        current = _timestamp(current)
+    elapsed = 0
+    if start and current:
+        elapsed = min(max(int(((finish or current) - start).total_seconds()), 0), 86400)
+    error_code = result.get("error_code") or job.get("error_code")
+    return {
+        "mode": _safe_value(state.get("unity_worker_mode"), {"local", "remote"}),
+        "worker_id": _safe_value(job.get("worker_id") or result.get("worker_id")),
+        "gate": gate,
+        "status": status,
+        "elapsed_seconds": elapsed,
+        "error_code": _safe_value(error_code),
+        "editmode": _test_summary(state.get("editmode_test_result", {})),
+        "playmode": _test_summary(state.get("playmode_test_result", {})),
+    }
 
 
 def _result_error(result):
@@ -70,8 +155,14 @@ def _failure(state):
         ("test_generator", "test_generation_result"),
         ("code_checker", "code_check_result"),
         ("unity_compiler", "compile_result"),
-        ("unity_test", "test_result"),
     )
+    if state.get("editmode_test_result") or state.get("playmode_test_result"):
+        checks += (
+            ("unity_editmode", "editmode_test_result"),
+            ("unity_playmode", "playmode_test_result"),
+        )
+    else:
+        checks += (("unity_test", "test_result"),)
     for gate, key in checks:
         result = state.get(key)
         if isinstance(result, dict) and result and not result.get("success", False):
@@ -168,6 +259,8 @@ def map_agent_state(state):
         "code_checker": "code",
         "unity_compiler": "code",
         "unity_test": "code",
+        "unity_editmode": "code",
+        "unity_playmode": "code",
         "reviewer": "code",
         "repair": "code",
         "model": "code",
@@ -178,4 +271,5 @@ def map_agent_state(state):
         "failed_gate": failed_gate,
         "failure_kind": failure_kind,
         "error_summary": error_summary,
+        "worker_validation": worker_validation_view(state),
     }

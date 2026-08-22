@@ -45,6 +45,67 @@ class TestGenerationTool:
             "errors": [],
         }
 
+    def apply_platforms(self, editmode_tests, playmode_tests):
+        errors = [
+            f"EditMode: {error}" for error in self._validate(editmode_tests)
+        ] + [f"PlayMode: {error}" for error in self._validate(playmode_tests)]
+        if errors:
+            return {
+                "success": False,
+                "files": [],
+                "editmode_files": [],
+                "playmode_files": [],
+                "errors": errors,
+            }
+
+        parent = os.path.dirname(self.root_path)
+        os.makedirs(parent, exist_ok=True)
+        staging_path = tempfile.mkdtemp(prefix=".generated-tests-", dir=parent)
+        backup_path = self.root_path + ".backup-" + uuid.uuid4().hex
+        try:
+            for platform, tests in (
+                ("editmode", editmode_tests),
+                ("playmode", playmode_tests),
+            ):
+                platform_path = os.path.join(staging_path, platform)
+                os.makedirs(platform_path)
+                for test in tests:
+                    with open(
+                        os.path.join(platform_path, test["name"]),
+                        "w",
+                        encoding="utf-8",
+                    ) as file:
+                        file.write(test["content"])
+
+            had_existing = os.path.isdir(self.root_path)
+            if had_existing:
+                os.replace(self.root_path, backup_path)
+            os.replace(staging_path, self.root_path)
+            if had_existing:
+                shutil.rmtree(backup_path)
+        except OSError as error:
+            if os.path.isdir(staging_path):
+                shutil.rmtree(staging_path, ignore_errors=True)
+            if os.path.isdir(backup_path) and not os.path.exists(self.root_path):
+                os.replace(backup_path, self.root_path)
+            return {
+                "success": False,
+                "files": [],
+                "editmode_files": [],
+                "playmode_files": [],
+                "errors": [str(error)],
+            }
+
+        editmode_files = sorted(test["name"] for test in editmode_tests)
+        playmode_files = sorted(test["name"] for test in playmode_tests)
+        return {
+            "success": True,
+            "files": editmode_files + playmode_files,
+            "editmode_files": editmode_files,
+            "playmode_files": playmode_files,
+            "errors": [],
+        }
+
     @staticmethod
     def _validate(tests):
         if not isinstance(tests, list) or not tests:

@@ -517,7 +517,7 @@ Unity Compiler结果
 
 
 =========================
-Unity Test Framework结果
+Unity Test Framework结果（必须分别核对 EditMode 与 PlayMode）
 =========================
 
 {test_result or {}}

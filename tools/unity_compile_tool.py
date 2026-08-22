@@ -23,7 +23,9 @@ class UnityCompileTool:
         self,
         unity_path,
         project_path,
-        source_path=None
+        source_path=None,
+        timeout=300,
+        process_runner=None
     ):
         """
         初始化Unity编译工具
@@ -42,6 +44,8 @@ class UnityCompileTool:
         self.unity_path = unity_path
         self.project_path = project_path
         self.source_path = source_path
+        self.timeout = timeout
+        self.process_runner = process_runner
 
 
     def system_error(self, message):
@@ -238,14 +242,15 @@ class UnityCompileTool:
                 log_path
             ]
 
-            result = subprocess.run(
+            runner = self.process_runner or subprocess.run
+            result = runner(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=300
+                timeout=self.timeout
             )
 
             output = result.stdout + result.stderr
@@ -292,6 +297,11 @@ class UnityCompileTool:
                     "raw": output
                 }
 
+        except subprocess.TimeoutExpired:
+            result_data = self.system_error(
+                f"Unity 编译超时，超过 {self.timeout} 秒"
+            )
+            result_data["errors"][0]["code"] = "UNITY_TIMEOUT"
         except Exception as e:
             result_data = self.system_error(str(e))
         finally:
