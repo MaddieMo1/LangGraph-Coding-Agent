@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import shutil
 
@@ -154,12 +156,22 @@ class UnityExecutor:
 
     @staticmethod
     def _outcome(status, failure_owner, error_code, evidence):
+        artifact_content = (
+            json.dumps(
+                evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ) + "\n"
+        ).encode("utf-8")
         return {
             "status": status,
             "failure_owner": failure_owner,
             "error_code": error_code,
             "evidence": evidence,
-            "artifacts": [],
+            "artifacts": [{
+                "name": "unity-evidence.json",
+                "size": len(artifact_content),
+                "sha256": hashlib.sha256(artifact_content).hexdigest(),
+            }],
+            "artifact_payloads": {"unity-evidence.json": artifact_content},
             "message": "",
             "process_stopped": True,
         }

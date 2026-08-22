@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -89,6 +90,11 @@ def run_worker_job(
             sandbox_removed = not sandbox_root.exists()
 
     finished_at = _timestamp(clock())
+    _write_artifact_payloads(
+        result_path,
+        outcome.get("artifacts", []),
+        outcome.pop("artifact_payloads", {}),
+    )
     result = build_worker_result(
         job,
         status=outcome["status"],
@@ -222,13 +228,37 @@ def _complete_running_marker(marker_path):
 
 def _atomic_write_json(path, value):
     path = Path(path).resolve()
+    _atomic_write_bytes(
+        path,
+        (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+        .encode("utf-8"),
+    )
+
+
+def _write_artifact_payloads(result_path, artifacts, payloads):
+    expected = {item.get("name"): item for item in artifacts or []}
+    if set(payloads) != set(expected):
+        if payloads or expected:
+            raise UnityWorkerRunError("worker artifact payloads do not match manifest")
+        return
+    for name, content in payloads.items():
+        item = expected[name]
+        if (
+            Path(name).name != name
+            or not isinstance(content, bytes)
+            or len(content) != item.get("size")
+            or hashlib.sha256(content).hexdigest() != item.get("sha256")
+        ):
+            raise UnityWorkerRunError("worker artifact payload is invalid")
+        _atomic_write_bytes(Path(result_path).resolve().parent / "artifacts" / name, content)
+
+
+def _atomic_write_bytes(path, content):
+    path = Path(path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
     try:
-        temporary.write_text(
-            json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        temporary.write_bytes(content)
         os.replace(temporary, path)
     except Exception:
         temporary.unlink(missing_ok=True)

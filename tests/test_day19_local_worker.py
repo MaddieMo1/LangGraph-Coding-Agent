@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -203,6 +204,38 @@ class LocalUnityWorkerTest(unittest.TestCase):
         self.assertEqual("worker", result["failure_owner"])
         self.assertEqual("WORKER_CRASHED", result["error_code"])
         self.assertNotIn("boom", result.get("message", ""))
+
+    def test_writes_executor_artifact_payload_with_declared_hash(self):
+        content = b'{"status":"passed"}\n'
+
+        class ArtifactExecutor(SuccessfulExecutor):
+            def execute(inner_self, job, project_path):
+                outcome = super().execute(job, project_path)
+                outcome["artifacts"] = [{
+                    "name": "unity-evidence.json",
+                    "size": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }]
+                outcome["artifact_payloads"] = {"unity-evidence.json": content}
+                return outcome
+
+        job = self._job(gate="compile")
+        result_path = self.root / "artifact-job" / "result.json"
+        result = run_worker_job(
+            self._write_job(job),
+            self.bundle,
+            result_path,
+            unity_path=self.root / "Unity.exe",
+            worker_id="local-worker",
+            network_isolation_enforced=True,
+            executor=ArtifactExecutor(),
+        )
+
+        self.assertEqual(1, len(result["artifacts"]))
+        self.assertEqual(
+            content,
+            (result_path.parent / "artifacts" / "unity-evidence.json").read_bytes(),
+        )
 
     def test_recovery_marks_only_owned_incomplete_jobs_as_crashed(self):
         state = self.root / "worker-state"
@@ -433,6 +466,13 @@ class UnityExecutorClassificationTest(unittest.TestCase):
             self.assertTrue(captured["generated_exists"])
             self.assertFalse(captured["editmode_exists"])
             self.assertFalse(captured["playmode_exists"])
+            self.assertEqual(["unity-evidence.json"], [
+                item["name"] for item in outcome["artifacts"]
+            ])
+            payload = outcome["artifact_payloads"]["unity-evidence.json"]
+            self.assertEqual(
+                outcome["artifacts"][0]["sha256"], hashlib.sha256(payload).hexdigest()
+            )
 
     def test_maps_test_assertion_and_license_failures_to_distinct_owners(self):
         class FakeTool:
