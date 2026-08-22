@@ -203,6 +203,10 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 
 以下流程以 [`workflow/graph.py`](./workflow/graph.py) 中实际注册的节点、条件边和失败出口为准：
 
+<p align="center">
+  <img src="./assets/workflow.png" alt="LangGraph Coding Agent v1.2.0 专业架构工作流" width="1000" />
+</p>
+
 ```mermaid
 flowchart TD
     A[用户需求] --> GP[Git 基线准备]
@@ -264,7 +268,11 @@ flowchart TD
 ### 👁️ 团队只读观察
 
 <p align="center">
-  <img src="./docs/design-references/day19-team-observation.png" alt="已登录的团队只读观察页面" width="900" />
+  <img src="./docs/design-references/day19-team-observation.png" alt="团队只读观察访问入口" width="900" />
+</p>
+
+<p align="center">
+  <img src="./docs/design-references/day19-team-observation-active.png" alt="已连接的团队只读观察任务详情" width="900" />
 </p>
 
 观察者使用服务端配置的只读令牌换取短期会话。真实浏览器验收确认任务选择器与状态卡可用，并且页面不存在审批、拒绝、重试、取消或 Git 操作控件。
