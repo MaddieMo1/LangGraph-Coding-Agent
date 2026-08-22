@@ -98,31 +98,13 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - 只有通过后续编译或测试验证的 Repair 才会成为可复用方案；系统与环境错误不会污染缺陷记忆。
 - Reviewer 与 Repair 会优先参考同错误码的历史成功方案，但当前 Compiler、NUnit 和 Root Cause 证据始终优先。
 
-## ✅ Day15：Enterprise AI Coding Agent / v1.0
+## ✅ Day19：隔离 Unity Worker 与双模式验证
 
-- Coordinator 生成版本化结构化需求契约，统一目标、显式文件范围、工程约束和质量门；空需求安全停止。
-- Architecture、File Planner 与 Reviewer 读取同一份检查点契约，不增加 Agent 或模型调用。
-- `project_version.py` 统一应用版本，`python -m tools.environment_check` 提供只读环境预检。
-- GitHub Actions 在无 Provider、无 Unity、无密钥环境中执行离线回归、Python 编译和空白检查。
-- [Day15 Notebook](./day15/Day15.ipynb) 可离线复核需求契约、固定评估指标和发布文件一致性。
-- [v1.0.0 发布说明](./docs/releases/v1.0.0.md) 记录兼容性、安全边界、验证证据与已知限制。
-- v1.0 UI 已通过真实浏览器视觉复核；恢复中的 Unity 任务在发现 `CS1061` 后正确返回 Repair 人工审批点，没有绕过审批门禁。
-
-## ✅ Day16：Unity API 可信知识检索
-
-- 在 Project Understanding 与 Architecture 之间加入确定性的 Unity Knowledge 节点，不增加新的 LLM Agent。
-- 默认读取项目本地知识和版本化缓存；只有显式允许时才访问 Unity 官方文档域名。
-- 对 HTTPS、重定向、内容长度、Unity 版本和提示词注入进行校验，向下游提供有界只读证据。
-- Architecture、Coder、Reviewer 与 Repair 可以引用可信 API 证据，但不能借此扩大需求契约或批准范围。
-- [Day16 Notebook](./day16/Day16.ipynb) 可离线复核缓存、版本匹配和安全拒绝路径。
-
-## ✅ Day17：审批审计与权限控制
-
-- 服务启动时绑定 `viewer`、`reviewer`、`approver` 或 `operator` 本地角色，并在服务端统一执行能力检查。
-- 审批、验证、Repair 和本地 Git 事件写入按项目隔离、哈希链接的审计链，重复请求保持幂等。
-- 审批状态和审计证据采用事务式边界；写入失败会补偿，不会留下“已批准但无审计”的状态。
-- UI 只显示当前角色可执行的操作与拒绝原因；当前仍是可信本机启动身份，不是浏览器账号系统。
-- [Day17 Notebook](./day17/Day17.ipynb) 可离线复核权限矩阵、审计链和审批恢复流程。
+- 控制器构建不可变 `.unityjob` 快照，固定 Unity 版本、Package manifest、输入文件和 SHA-256。
+- 本机子进程 Worker 或显式启用的 HTTPS Worker 依次执行 `compile → EditMode → PlayMode`，结果不能相互覆盖。
+- 远程协议使用 HTTPS、时间戳、nonce、请求体摘要和 HMAC 签名，拒绝重放、陈旧请求和任意命令。
+- 真实局域网 Worker 已验证防火墙网络隔离、幂等取消、沙箱清理、结果与证据产物哈希。
+- [Day19 Notebook](./day19/Day19.ipynb)、[验收说明](./docs/releases/day19-unity-worker.md)和 [v1.2.0 发布说明](./docs/releases/v1.2.0.md)记录完整证据。
 
 ## ✅ Day18：团队只读观察
 
@@ -132,13 +114,31 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 - 局域网观察者不能批准、拒绝、继续、重试、取消、执行 Git 或访问本机控制面。
 - [Day18 Notebook](./day18/Day18.ipynb) 和[发布说明](./docs/releases/day18-team-observation.md)记录真实第二设备验收。
 
-## ✅ Day19：隔离 Unity Worker 与双模式验证
+## ✅ Day17：审批审计与权限控制
 
-- 控制器构建不可变 `.unityjob` 快照，固定 Unity 版本、Package manifest、输入文件和 SHA-256。
-- 本机子进程 Worker 或显式启用的 HTTPS Worker 依次执行 `compile → EditMode → PlayMode`，结果不能相互覆盖。
-- 远程协议使用 HTTPS、时间戳、nonce、请求体摘要和 HMAC 签名，拒绝重放、陈旧请求和任意命令。
-- 真实局域网 Worker 已验证防火墙网络隔离、幂等取消、沙箱清理、结果与证据产物哈希。
-- [Day19 Notebook](./day19/Day19.ipynb)、[验收说明](./docs/releases/day19-unity-worker.md)和 [v1.2.0 发布说明](./docs/releases/v1.2.0.md)记录完整证据。
+- 服务启动时绑定 `viewer`、`reviewer`、`approver` 或 `operator` 本地角色，并在服务端统一执行能力检查。
+- 审批、验证、Repair 和本地 Git 事件写入按项目隔离、哈希链接的审计链，重复请求保持幂等。
+- 审批状态和审计证据采用事务式边界；写入失败会补偿，不会留下“已批准但无审计”的状态。
+- UI 只显示当前角色可执行的操作与拒绝原因；当前仍是可信本机启动身份，不是浏览器账号系统。
+- [Day17 Notebook](./day17/Day17.ipynb) 可离线复核权限矩阵、审计链和审批恢复流程。
+
+## ✅ Day16：Unity API 可信知识检索
+
+- 在 Project Understanding 与 Architecture 之间加入确定性的 Unity Knowledge 节点，不增加新的 LLM Agent。
+- 默认读取项目本地知识和版本化缓存；只有显式允许时才访问 Unity 官方文档域名。
+- 对 HTTPS、重定向、内容长度、Unity 版本和提示词注入进行校验，向下游提供有界只读证据。
+- Architecture、Coder、Reviewer 与 Repair 可以引用可信 API 证据，但不能借此扩大需求契约或批准范围。
+- [Day16 Notebook](./day16/Day16.ipynb) 可离线复核缓存、版本匹配和安全拒绝路径。
+
+## ✅ Day15：Enterprise AI Coding Agent / v1.0
+
+- Coordinator 生成版本化结构化需求契约，统一目标、显式文件范围、工程约束和质量门；空需求安全停止。
+- Architecture、File Planner 与 Reviewer 读取同一份检查点契约，不增加 Agent 或模型调用。
+- `project_version.py` 统一应用版本，`python -m tools.environment_check` 提供只读环境预检。
+- GitHub Actions 在无 Provider、无 Unity、无密钥环境中执行离线回归、Python 编译和空白检查。
+- [Day15 Notebook](./day15/Day15.ipynb) 可离线复核需求契约、固定评估指标和发布文件一致性。
+- [v1.0.0 发布说明](./docs/releases/v1.0.0.md) 记录兼容性、安全边界、验证证据与已知限制。
+- v1.0 UI 已通过真实浏览器视觉复核；恢复中的 Unity 任务在发现 `CS1061` 后正确返回 Repair 人工审批点，没有绕过审批门禁。
 
 ## ✅ Day14：Agent Evaluation
 
