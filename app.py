@@ -2,7 +2,7 @@ import os
 import ipaddress
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 import gradio as gr
 import uvicorn
 
@@ -24,6 +24,11 @@ from ui.observation_app import (
 )
 from workflow.runtime import WorkflowRuntime
 from workflow.task_observation import TaskObservationProjector
+
+
+ICON_DIRECTORY = os.path.join(os.path.dirname(__file__), "assets", "icons")
+CONTROL_FAVICON = os.path.join(ICON_DIRECTORY, "favicon.ico")
+OBSERVATION_FAVICON = os.path.join(ICON_DIRECTORY, "task-observer.png")
 
 
 class LocalControlOnlyMiddleware:
@@ -82,6 +87,10 @@ def compose_application(
         def observation_entry():
             return RedirectResponse("/observe/ui/")
 
+        @application.get("/observe/assets/task-observer.png", include_in_schema=False)
+        def observation_favicon():
+            return FileResponse(OBSERVATION_FAVICON, media_type="image/png")
+
         application = gr.mount_gradio_app(
             application,
             observation_demo,
@@ -89,6 +98,10 @@ def compose_application(
             server_name=settings.server_name,
             server_port=settings.server_port,
             footer_links=[],
+            head=(
+                '<link rel="icon" type="image/png" '
+                'href="/observe/assets/task-observer.png">'
+            ),
             show_error=False,
             css=OBSERVATION_CSS,
             js=OBSERVATION_JS,
@@ -100,6 +113,7 @@ def compose_application(
         server_name=(settings.server_name if settings.enabled else "127.0.0.1"),
         server_port=settings.server_port,
         footer_links=[],
+        favicon_path=CONTROL_FAVICON,
         show_error=True,
         css=APPROVAL_CSS,
         js=APPROVAL_JS,

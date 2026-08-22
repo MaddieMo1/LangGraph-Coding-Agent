@@ -72,6 +72,23 @@ class ReleaseEngineeringTest(unittest.TestCase):
         self.assertIn("from project_version import __version__", ui)
         self.assertIn('f"LangGraph Coding Agent v{__version__}', ui)
 
+    def test_browser_and_companion_icons_are_packaged(self):
+        icon_directory = ROOT / "assets" / "icons"
+
+        for name in (
+            "favicon.ico",
+            "coding-agent.png",
+            "remote-worker.png",
+            "task-observer.png",
+        ):
+            icon = icon_directory / name
+            self.assertTrue(icon.is_file(), name)
+            self.assertGreater(icon.stat().st_size, 0, name)
+
+        application = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn("favicon_path=CONTROL_FAVICON", application)
+        self.assertIn('href="/observe/assets/task-observer.png"', application)
+
     def test_environment_preflight_accepts_dirty_but_valid_runtime_repository(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
