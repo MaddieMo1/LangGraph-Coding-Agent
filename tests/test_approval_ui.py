@@ -1441,6 +1441,17 @@ class ApprovalControllerTest(unittest.TestCase):
         self.assertIn("#observation-nav .html-container", APPROVAL_CSS)
         self.assertIn("#observation-nav .prose", APPROVAL_CSS)
 
+    def test_primary_navigation_items_share_the_same_typography(self):
+        typography_css = APPROVAL_CSS.split(
+            "#primary-navigation button,", 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("#observation-nav a", typography_css)
+        self.assertIn("font-family: inherit !important", typography_css)
+        self.assertIn("font-size: 14px !important", typography_css)
+        self.assertIn("font-weight: 500 !important", typography_css)
+        self.assertIn("line-height: 1 !important", typography_css)
+
     def test_task_detail_drawer_has_one_reachable_vertical_scroll_container(self):
         drawer_css = APPROVAL_CSS.split(
             "#task-detail-drawer,", 1

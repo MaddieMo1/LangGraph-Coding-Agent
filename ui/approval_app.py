@@ -1253,6 +1253,15 @@ body {
     max-width: 96px !important;
 }
 
+#primary-navigation button,
+#observation-nav a {
+    font-family: inherit !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+    letter-spacing: 0 !important;
+}
+
 #primary-navigation button {
     width: 100% !important;
     min-width: 0;
@@ -1285,7 +1294,6 @@ body {
     padding: 0;
     border-radius: 6px;
     color: #8192a8 !important;
-    font-size: 14px;
     text-decoration: none !important;
 }
 
