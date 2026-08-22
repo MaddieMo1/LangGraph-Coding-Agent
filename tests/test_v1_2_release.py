@@ -17,6 +17,20 @@ class V120ReleaseTests(unittest.TestCase):
         self.assertIn("docs/releases/v1.2.0.md", readme)
         self.assertIn("v1.2.0 — 已完成（Day19）", readme)
 
+    def test_main_capability_section_lists_day16_through_day19_in_order(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        headings = (
+            "## ✅ Day15：Enterprise AI Coding Agent / v1.0",
+            "## ✅ Day16：Unity API 可信知识检索",
+            "## ✅ Day17：审批审计与权限控制",
+            "## ✅ Day18：团队只读观察",
+            "## ✅ Day19：隔离 Unity Worker 与双模式验证",
+            "## ✅ Day14：Agent Evaluation",
+        )
+
+        positions = [readme.index(heading) for heading in headings]
+        self.assertEqual(sorted(positions), positions)
+
     def test_release_notes_cover_worker_boundaries_and_real_evidence(self):
         release = RELEASE_PATH.read_text(encoding="utf-8")
 
