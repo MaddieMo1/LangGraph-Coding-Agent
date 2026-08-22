@@ -206,7 +206,7 @@ class RemoteUnityWorkerClient:
         if payload is not None:
             headers["Content-Type"] = "application/json"
         return self.session.request(
-            method.upper(), self.endpoint + path, content=body,
+            method.upper(), self.endpoint + path, data=body,
             headers=headers, timeout=self.request_timeout,
         )
 

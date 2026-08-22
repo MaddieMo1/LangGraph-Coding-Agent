@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from requests import Timeout
+from requests import Response, Session, Timeout
 
 from tests import test_day19_remote_worker_api as api_fixture
 from tools.remote_unity_worker_client import (
@@ -32,6 +32,16 @@ class TestClientSession:
     def request(self, method, url, **kwargs):
         kwargs.pop("timeout", None)
         return self.delegate.request(method, url, **kwargs)
+
+
+class CapturingRequestsSession(Session):
+    def send(self, request, **kwargs):
+        self.prepared_request = request
+        response = Response()
+        response.status_code = 200
+        response._content = b'{"network_isolation_enforced": false}'
+        response.request = request
+        return response
 
 
 class RemoteUnityWorkerClientTest(unittest.TestCase):
@@ -83,6 +93,19 @@ class RemoteUnityWorkerClientTest(unittest.TestCase):
 
         self.assertEqual("NETWORK_ISOLATION_UNAVAILABLE", raised.exception.code)
         self.assertEqual([], self.fixture.executor.submitted)
+
+    def test_request_uses_the_real_requests_session_signature(self):
+        session = CapturingRequestsSession()
+
+        capabilities = self._client(session=session)._json_request(
+            "GET", "/worker/v1/capabilities"
+        )
+
+        self.assertFalse(capabilities["network_isolation_enforced"])
+        self.assertEqual(
+            "https://worker.example/worker/v1/capabilities",
+            session.prepared_request.url,
+        )
 
     def test_ambiguous_submission_never_falls_back_or_resubmits(self):
         session = AmbiguousSession(self.fixture.client)
