@@ -89,6 +89,43 @@ class ReleaseEngineeringTest(unittest.TestCase):
         self.assertIn("favicon_path=CONTROL_FAVICON", application)
         self.assertIn('href="/observe/assets/task-observer.png"', application)
 
+    def test_readme_architecture_and_roadmap_match_the_current_release(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        roadmap = readme.split("## 🗺️ 开发路线", 1)[1].split(
+            "### 🔭 后续计划", 1
+        )[0]
+
+        versions = (
+            "v1.2.0", "v1.1.0", "v1.0.0", "v0.11.0", "v0.10.0",
+            "v0.9.0", "v0.8.0", "v0.7.0", "v0.6.0", "v0.5.0",
+            "v0.4.0", "v0.3.0", "v0.2.0", "v0.1.0",
+        )
+        version_positions = [roadmap.index(f"### ✅ {version}") for version in versions]
+        day_positions = [roadmap.index(f"### ✅ Day{day}") for day in (19, 18, 17, 16)]
+        self.assertEqual(sorted(version_positions), version_positions)
+        self.assertEqual(sorted(day_positions), day_positions)
+
+        for relative_path in (
+            "worker/remote_app.py",
+            "worker/unity_executor.py",
+            "ui/observation_app.py",
+            "workflow/unity_knowledge.py",
+            "tools/unity_snapshot.py",
+            "docs/design-references/day19-workbench.png",
+            "docs/design-references/day19-task-center.png",
+            "docs/design-references/day19-team-observation.png",
+        ):
+            self.assertTrue((ROOT / relative_path).is_file(), relative_path)
+
+        for label in (
+            "Git 基线准备",
+            "基线编译",
+            "不可变 Unity 快照",
+            "EditMode → PlayMode",
+            "路径限定的本地 Git 提交",
+        ):
+            self.assertIn(label, readme)
+
     def test_environment_preflight_accepts_dirty_but_valid_runtime_repository(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

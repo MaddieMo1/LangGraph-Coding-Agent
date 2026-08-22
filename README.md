@@ -201,42 +201,73 @@ LangGraph Coding Agent 用于探索多个专业智能体如何协作完成软件
 
 ## 🔄 工作流
 
-<p align="center">
-  <img src="./assets/workflow.png" alt="LangGraph Coding Agent 工作流" width="900" />
-</p>
+以下流程以 [`workflow/graph.py`](./workflow/graph.py) 中实际注册的节点、条件边和失败出口为准：
 
 ```mermaid
 flowchart TD
-    A[用户需求] --> B[需求协调]
+    A[用户需求] --> GP[Git 基线准备]
+    GP -->|准备成功| BC[基线编译]
+    GP -->|仓库不安全| Z[以失败状态结束]
+    BC -->|基线通过| B[需求协调]
+    BC -->|基线失败| Z
     B --> P[工程理解与依赖图]
-    P --> K[Unity API 知识检索]
-    K --> C[架构设计]
+    P --> UK[Unity API 知识检索]
+    UK --> C[架构设计]
     C --> D[架构验证]
-    D --> E[文件规划]
+    D -->|通过| E[文件规划]
+    D -->|不通过| C
     E --> F[代码生成]
-    F --> P1[变更提案]
-    P1 --> A1[人工审批]
-    A1 -->|批准| T[EditMode 测试生成]
-    A1 -->|拒绝| Z
-    T --> G[静态检查]
-    G --> H[Unity 编译]
-    H -->|系统错误| Z[以失败状态结束]
-    H -->|编译通过| U[隔离 Unity 测试]
+    F --> CP[变更提案]
+    CP --> HA[人工审批]
+    HA -->|批准生成代码| T[EditMode 测试生成]
+    HA -->|批准修复| G[静态检查]
+    HA -->|拒绝| Z
+    T -->|生成成功| G
+    T -->|生成失败| Z
+    G --> S[不可变 Unity 快照]
+    S -->|快照成功| H[Unity 编译]
+    S -->|快照失败| Z
+    H -->|系统错误| Z
+    H -->|编译通过| U[隔离 Unity 测试<br/>EditMode → PlayMode]
     H -->|编译失败| I[代码审核]
     U -->|运行器错误| Z
     U -->|测试结果| I
-    I -->|严格通过| J[完成任务]
-    I -->|编译或代码问题| K[代码修复]
+    I -->|严格通过| GC[路径限定的本地 Git 提交]
+    I -->|编译、测试或代码问题| R[代码修复]
     I -->|架构问题| C
-    K --> P2[修复提案]
-    P2 --> A2[人工审批]
-    A2 -->|批准| G
-    A2 -->|拒绝| Z
+    R --> RP[修复提案]
+    RP --> HA
+    GC --> J[统一结束]
+    Z --> J
 ```
 
-修复循环具有明确的次数上限。达到上限时会结束执行，但不会将失败状态误报为成功。
+架构验证、Reviewer 格式纠正和 Repair 都具有明确的重试上限。只有静态检查、Unity 编译、EditMode、PlayMode 和 Reviewer 严格通过后才允许创建本地提交；`finish_task` 是统一终点，不等同于成功状态。
 
 ## 📸 运行效果
+
+### 🆕 v1.2.0 当前工作台
+
+<p align="center">
+  <img src="./docs/design-references/day19-workbench.png" alt="v1.2.0 当前工作台、统一顶部导航与安全任务入口" width="900" />
+</p>
+
+当前工作台统一展示工作台、任务中心和团队观察入口，并保留四阶段导航、任务状态、当前节点与安全任务入口。
+
+### 🗃️ v1.2.0 当前任务中心
+
+<p align="center">
+  <img src="./docs/design-references/day19-task-center.png" alt="v1.2.0 当前任务中心" width="900" />
+</p>
+
+任务中心从 SQLite 检查点加载真实任务，支持状态统计、搜索、筛选、分页、任务详情与安全清理。
+
+### 👁️ 团队只读观察
+
+<p align="center">
+  <img src="./docs/design-references/day19-team-observation.png" alt="已登录的团队只读观察页面" width="900" />
+</p>
+
+观察者使用服务端配置的只读令牌换取短期会话。真实浏览器验收确认任务选择器与状态卡可用，并且页面不存在审批、拒绝、重试、取消或 Git 操作控件。
 
 ### 🧭 工作台与安全任务入口
 
@@ -288,6 +319,8 @@ flowchart TD
 
 ## 🗂️ 项目结构
 
+以下列出当前仓库的核心运行目录与关键文件；`__init__.py`、缓存文件、Notebook 和部分辅助模块已省略。
+
 ```text
 LangGraph-Coding-Agent/
 ├── agents/
@@ -297,43 +330,85 @@ LangGraph-Coding-Agent/
 │   ├── coder.py
 │   ├── coordinator.py
 │   ├── file_planner.py
+│   ├── git.py
 │   ├── repair.py
 │   ├── reviewer.py
 │   ├── test_generator.py
-│   ├── unity_test.py
-│   └── unity_compiler.py
+│   ├── unity_compiler.py
+│   └── unity_test.py
+├── workflow/
+│   ├── graph.py
+│   ├── human_approval.py
+│   ├── long_term_memory.py
+│   ├── project_understanding.py
+│   ├── review_router.py
+│   ├── router.py
+│   ├── runtime.py
+│   ├── task_observation.py
+│   ├── task.py
+│   └── unity_knowledge.py
 ├── memory/
+│   ├── approval.py
+│   ├── approval_audit.py
 │   ├── dependency_graph.py
+│   ├── long_term.py
 │   ├── patch_history.py
 │   ├── project_context.py
-│   └── state.py
+│   ├── state.py
+│   ├── task_observation.py
+│   └── unity_knowledge.py
 ├── prompts/
+│   ├── architecture_prompt.py
+│   ├── coder_prompt.py
+│   ├── coordinator_prompt.py
+│   ├── file_planner_prompt.py
 │   ├── repair_prompt.py
 │   ├── reviewer_prompt.py
 │   └── test_generator_prompt.py
 ├── tools/
+│   ├── approval_policy.py
+│   ├── change_proposal_tool.py
 │   ├── code_check_tool.py
 │   ├── dependency_graph.py
 │   ├── diff_tool.py
-│   ├── file_manager.py
+│   ├── environment_check.py
+│   ├── git_tool.py
 │   ├── project_scanner.py
 │   ├── repair_tool.py
-│   ├── test_generation_tool.py
+│   ├── remote_unity_worker_client.py
+│   ├── unity_compile_tool.py
+│   ├── unity_snapshot.py
 │   ├── unity_test_tool.py
-│   └── unity_compile_tool.py
-├── workflow/
-│   ├── graph.py
-│   ├── project_understanding.py
-│   ├── review_router.py
-│   ├── runtime.py
-│   ├── router.py
-│   └── task.py
+│   └── unity_worker_contract.py
+├── worker/
+│   ├── job_store.py
+│   ├── remote_app.py
+│   ├── unity_executor.py
+│   └── unity_worker.py
 ├── ui/
-│   └── approval_app.py
+│   ├── approval_app.py
+│   ├── observation_app.py
+│   └── view_state.py
+├── evaluation/
+│   ├── cases/
+│   ├── integration/
+│   ├── metrics.py
+│   ├── report.py
+│   └── runner.py
+├── llm/
+├── rag/
 ├── tests/
 ├── docs/
+│   ├── adr/
+│   ├── design-references/
+│   ├── plans/
+│   └── releases/
+├── day01/ ... day19/
+├── assets/
+│   └── icons/
 ├── app.py
 ├── main.py
+├── project_version.py
 ├── requirements.txt
 ├── CONTRIBUTING.md
 └── LICENSE
@@ -487,90 +562,23 @@ python main.py
 
 ## 🗺️ 开发路线
 
-### ✅ v0.1.0 — 已完成
+以下按版本号和 Day 编号分别倒序排列。
 
-- 多智能体工作流；
-- 架构设计与文件规划；
-- 多文件代码生成；
-- Reviewer 与基础修复循环。
+### ✅ v1.2.0 — 已完成（Day19）
 
-### ✅ v0.2.0 — 已完成（Day06-4）
+- 使用不可变 Unity 项目快照固定版本、Package manifest、输入文件和 SHA-256；
+- 使用隔离本机 Worker 或受 HMAC 保护的 HTTPS Worker 依次执行 compile、EditMode 和 PlayMode；
+- 独立局域网 Worker 已完成真实证书、网络隔离、取消、陈旧请求拒绝、沙箱清理和产物完整性验收；
+- Reviewer 与路径限定本地 Git 门禁保持不变，不增加远程 push、merge 或部署能力；
+- [v1.2.0 发布说明](./docs/releases/v1.2.0.md) 记录完整能力、安全边界、兼容性和真实环境证据。
 
-- 编译器级代码检查；
-- 真实 Unity BatchMode 编译；
-- 结构化编译错误解析；
-- 编译、审核和修复历史；
-- 严格通过条件与有限路由；
-- 真实编译—修复—验证闭环。
+### ✅ v1.1.0 — 已完成（Day16～Day18）
 
-### ✅ v0.3.0 — 已完成（Day06-5 / Day06-6）
-
-- 工程化 Repair Tool；
-- 使用精准补丁替代 Agent 直接写文件；
-- 补丁历史、版本比较和安全撤销。
-
-### ✅ v0.4.0 — 已完成（Day07 / Day08）
-
-- Unity 工程确定性扫描；
-- 版本化 `project_context.json`；
-- 项目内类型依赖图；
-- 直接、反向和传递依赖查询；
-- Architecture 与 File Planner 工程上下文注入。
-
-### ✅ v0.5.0 — 已完成（Day09）
-
-- 安全 EditMode 测试生成；
-- 隔离 Unity 沙箱执行；
-- NUnit XML 结构化报告；
-- 编译、测试、审核联合通过门槛。
-
-### ✅ v0.6.0 — 已完成（Day10）
-
-- 项目隔离的四类长期记忆；
-- 缺陷指纹、复发计数和验证后解决状态；
-- 历史成功方案的有界检索与提示词注入；
-- 原子写入、版本校验和系统错误隔离。
-
-### ✅ v0.7.0 — 已完成（Day11）
-
-- Coder 与 Repair 的 Human in the Loop 审批门；
-- SQLite 检查点与 thread ID 恢复；
-- 按文件展示 Diff；
-- 默认整批审批，高级模式逐文件选择；
-- 冲突检测、原子应用、补偿回滚和幂等决策。
-
-### ✅ v0.8.0 — 已完成（Day11 UI / 交互重构）
-
-- Neural Control Deck 科技简约深色界面；
-- 历史任务自动发现与选择恢复；
-- LangGraph 节点执行进度实时展示；
-- 文件选中、禁用、加载和审批状态的完整深色主题；
-- 浏览器原生页面滚动与固定审批操作栏；
-- 桌面、平板、移动端响应式布局与减少动态效果支持。
-
-### ✅ v0.9.0 — 已完成（Day12）
-
-- 生成代码仓库的干净基线检查与本地任务分支；
-- Git 状态、Diff、按批准路径暂存和中文 Conventional Commit；
-- 批准文件哈希复核与未批准文件隔离；
-- 全验证门禁后的本地提交和持久化 Git 结果；
-- 不包含 push、PR、reset、merge、rebase 或历史改写；stash 仅用于用户显式触发、可恢复的失败现场归档。
-
-### ✅ v0.10.0 — 已完成（Day13）
-
-- 按角色和确定性复杂度路由 DeepSeek、Kimi、Qwen 与 GLM；
-- 输出格式纠正、受限重试和最多一次跨 Provider 回退；
-- 路由、调用次数、耗时和 token usage 持久化与只读展示；
-- 保持现有 Agent 数量、人工审批、Unity 门禁和 Git 权限不变。
-- 四家 Provider 最小真实调用通过；真实 Unity 2022.3 全链路完成生成、审批、编译、7/7 EditMode 测试、Reviewer 100 分和路径受限的本地 Git 提交。
-
-### ✅ v0.11.0 — 已完成（Day14）
-
-- 固定、可复现且只读的离线 Agent 基准；
-- 端到端、编译、Repair、Token、循环、稳定性、路由漂移与失败分类指标；
-- 确定性 JSON/Markdown 报告与 no-LLM Notebook；
-- 离线分数与真实 Provider + Unity 验收证据严格分离；
-- 零修复与 Repair 1 轮后成功两条真实链路均通过全部质量门并创建本地提交。
+- 增加仅信任 Unity 官方域名、版本匹配且证据有界的 Unity API 知识检索；
+- 增加服务端本地角色权限、哈希链接审批审计链和事务式审批证据；
+- 增加同一服务内的团队只读观察、脱敏任务名称、SSE 断线续传、多观察者在线状态及本机控制面隔离；
+- 使用真实手机完成第二设备验收：观察页正常连接，局域网控制台根路径保持拒绝访问；
+- [v1.1.0 发布说明](./docs/releases/v1.1.0.md) 记录新增能力、安全边界、兼容性、验证证据与已知限制。
 
 ### ✅ v1.0.0 — 已完成（Day15）
 
@@ -582,38 +590,98 @@ python main.py
 - `day15/Day15.ipynb` 与 `docs/releases/v1.0.0.md` 提供可复现教程、发布证据、兼容性和已知限制。
 - v1.0 UI 通过真实浏览器复核；运行时任务恢复后仍严格停在 Repair 人工审批边界。
 
-### ✅ v1.1.0 — 已完成（Day16～Day18）
+### ✅ v0.11.0 — 已完成（Day14）
 
-- 增加仅信任 Unity 官方域名、版本匹配且证据有界的 Unity API 知识检索；
-- 增加服务端本地角色权限、哈希链接审批审计链和事务式审批证据；
-- 增加同一服务内的团队只读观察、脱敏任务名称、SSE 断线续传、多观察者在线状态及本机控制面隔离；
-- 使用真实手机完成第二设备验收：观察页正常连接，局域网控制台根路径保持拒绝访问；
-- [v1.1.0 发布说明](./docs/releases/v1.1.0.md) 记录新增能力、安全边界、兼容性、验证证据与已知限制。
+- 固定、可复现且只读的离线 Agent 基准；
+- 端到端、编译、Repair、Token、循环、稳定性、路由漂移与失败分类指标；
+- 确定性 JSON/Markdown 报告与 no-LLM Notebook；
+- 离线分数与真实 Provider + Unity 验收证据严格分离；
+- 零修复与 Repair 1 轮后成功两条真实链路均通过全部质量门并创建本地提交。
 
-### ✅ v1.2.0 — 已完成（Day19）
+### ✅ v0.10.0 — 已完成（Day13）
 
-- 使用不可变 Unity 项目快照固定版本、Package manifest、输入文件和 SHA-256；
-- 使用隔离本机 Worker 或受 HMAC 保护的 HTTPS Worker 依次执行 compile、EditMode 和 PlayMode；
-- 独立局域网 Worker 已完成真实证书、网络隔离、取消、陈旧请求拒绝、沙箱清理和产物完整性验收；
-- Reviewer 与路径限定本地 Git 门禁保持不变，不增加远程 push、merge 或部署能力；
-- [v1.2.0 发布说明](./docs/releases/v1.2.0.md) 记录完整能力、安全边界、兼容性和真实环境证据。
+- 按角色和确定性复杂度路由 DeepSeek、Kimi、Qwen 与 GLM；
+- 输出格式纠正、受限重试和最多一次跨 Provider 回退；
+- 路由、调用次数、耗时和 token usage 持久化与只读展示；
+- 保持现有 Agent 数量、人工审批、Unity 门禁和 Git 权限不变。
+- 四家 Provider 最小真实调用通过；真实 Unity 2022.3 全链路完成生成、审批、编译、7/7 EditMode 测试、Reviewer 100 分和路径受限的本地 Git 提交。
 
-### ✅ Day16 — 已完成（Unity API 知识检索）
+### ✅ v0.9.0 — 已完成（Day12）
 
-- 在 Project Understanding 与 Architecture 之间加入确定性的 Unity Knowledge 节点，不增加新的 LLM Agent；
-- 按项目本地知识、版本化缓存、受控联网顺序检索，并默认保持离线；
-- 联网仅允许 Unity 官方文档域名，校验 HTTPS、重定向、内容边界、版本匹配和提示词注入；
-- Architecture、Coder、Reviewer 与 Repair 最多接收 3 条经过复核的只读证据，不能扩大需求契约；
-- UI 展示检索状态、Unity 版本、匹配结果、标题和官方链接，不暴露完整远程正文；
-- 离线 Notebook、真实 `Object.Destroy` 官方文档探针及 380 项完整 Python 回归测试均已通过。
+- 生成代码仓库的干净基线检查与本地任务分支；
+- Git 状态、Diff、按批准路径暂存和中文 Conventional Commit；
+- 批准文件哈希复核与未批准文件隔离；
+- 全验证门禁后的本地提交和持久化 Git 结果；
+- 不包含 push、PR、reset、merge、rebase 或历史改写；stash 仅用于用户显式触发、可恢复的失败现场归档。
 
-### ✅ Day17 — 已完成（审批审计与权限控制）
+### ✅ v0.8.0 — 已完成（Day11 UI / 交互重构）
 
-- 服务启动时绑定 `viewer`、`reviewer`、`approver` 或 `operator` 本地角色，服务端统一执行能力校验；
-- 审批事件写入按项目隔离、哈希链接的 JSONL 审计链，支持幂等写入、敏感备注清理与只读验证导出；
-- 审批状态变更采用事务式写入与失败补偿，验证、Repair 和本地 Git 关键事件均纳入审计；
-- UI 按当前能力显示可执行操作及拒绝原因，但本阶段仍是本机启动身份，不是登录或远程认证系统；
-- Day17 Notebook 已离线执行 10 个单元且无错误；38 项 Day17 测试和 419 项完整 Python 回归测试均已通过。
+- Neural Control Deck 科技简约深色界面；
+- 历史任务自动发现与选择恢复；
+- LangGraph 节点执行进度实时展示；
+- 文件选中、禁用、加载和审批状态的完整深色主题；
+- 浏览器原生页面滚动与固定审批操作栏；
+- 桌面、平板、移动端响应式布局与减少动态效果支持。
+
+### ✅ v0.7.0 — 已完成（Day11）
+
+- Coder 与 Repair 的 Human in the Loop 审批门；
+- SQLite 检查点与 thread ID 恢复；
+- 按文件展示 Diff；
+- 默认整批审批，高级模式逐文件选择；
+- 冲突检测、原子应用、补偿回滚和幂等决策。
+
+### ✅ v0.6.0 — 已完成（Day10）
+
+- 项目隔离的四类长期记忆；
+- 缺陷指纹、复发计数和验证后解决状态；
+- 历史成功方案的有界检索与提示词注入；
+- 原子写入、版本校验和系统错误隔离。
+
+### ✅ v0.5.0 — 已完成（Day09）
+
+- 安全 EditMode 测试生成；
+- 隔离 Unity 沙箱执行；
+- NUnit XML 结构化报告；
+- 编译、测试、审核联合通过门槛。
+
+### ✅ v0.4.0 — 已完成（Day07 / Day08）
+
+- Unity 工程确定性扫描；
+- 版本化 `project_context.json`；
+- 项目内类型依赖图；
+- 直接、反向和传递依赖查询；
+- Architecture 与 File Planner 工程上下文注入。
+
+### ✅ v0.3.0 — 已完成（Day06-5 / Day06-6）
+
+- 工程化 Repair Tool；
+- 使用精准补丁替代 Agent 直接写文件；
+- 补丁历史、版本比较和安全撤销。
+
+### ✅ v0.2.0 — 已完成（Day06-4）
+
+- 编译器级代码检查；
+- 真实 Unity BatchMode 编译；
+- 结构化编译错误解析；
+- 编译、审核和修复历史；
+- 严格通过条件与有限路由；
+- 真实编译—修复—验证闭环。
+
+### ✅ v0.1.0 — 已完成
+
+- 多智能体工作流；
+- 架构设计与文件规划；
+- 多文件代码生成；
+- Reviewer 与基础修复循环。
+
+### ✅ Day19 — 已完成（隔离 Unity Worker 与双模式验证）
+
+- 定义不可变 Unity 快照、固定 Worker 作业/结果协议以及 `compile → EditMode → PlayMode` 双测试门禁；
+- 提供本地子进程 Worker 与显式启用的 HTTPS 远程适配器，拒绝任意命令、未知字段、越权产物和陈旧结果；
+- 控制台与团队观察面只显示严格白名单的 Worker 状态；
+- 76 项 Day19 专项测试和 573 项完整 Python 回归测试通过；真实本机 Worker 与局域网独立 HTTPS Worker 均使用 Unity `2022.3.62f2c1` 完成 compile、EditMode 1/1、PlayMode 1/1 验收；
+- 独立 Worker 已验证操作系统防火墙网络隔离、HTTPS 证书、HMAC 请求签名、陈旧请求拒绝、幂等取消、沙箱清理和证据产物哈希，详细证据见发布说明。
 
 ### ✅ Day18 — 已完成（团队只读观察）
 
@@ -624,13 +692,22 @@ python main.py
 - 远程路由没有审批、继续、重试、取消、Git、源码或 Diff 修改能力，投影失败也不会改变工作流结果；
 - Day18 Notebook 已离线执行 5 个代码单元且无错误；489 项完整 Python 回归测试、Python 编译和空白检查均已通过。
 
-### ✅ Day19 — 已完成（隔离 Unity Worker 与双模式验证）
+### ✅ Day17 — 已完成（审批审计与权限控制）
 
-- 定义不可变 Unity 快照、固定 Worker 作业/结果协议以及 `compile → EditMode → PlayMode` 双测试门禁；
-- 提供本地子进程 Worker 与显式启用的 HTTPS 远程适配器，拒绝任意命令、未知字段、越权产物和陈旧结果；
-- 控制台与团队观察面只显示严格白名单的 Worker 状态；
-- 76 项 Day19 专项测试和 573 项完整 Python 回归测试通过；真实本机 Worker 与局域网独立 HTTPS Worker 均使用 Unity `2022.3.62f2c1` 完成 compile、EditMode 1/1、PlayMode 1/1 验收；
-- 独立 Worker 已验证操作系统防火墙网络隔离、HTTPS 证书、HMAC 请求签名、陈旧请求拒绝、幂等取消、沙箱清理和证据产物哈希，详细证据见发布说明。
+- 服务启动时绑定 `viewer`、`reviewer`、`approver` 或 `operator` 本地角色，服务端统一执行能力校验；
+- 审批事件写入按项目隔离、哈希链接的 JSONL 审计链，支持幂等写入、敏感备注清理与只读验证导出；
+- 审批状态变更采用事务式写入与失败补偿，验证、Repair 和本地 Git 关键事件均纳入审计；
+- UI 按当前能力显示可执行操作及拒绝原因，但本阶段仍是本机启动身份，不是登录或远程认证系统；
+- Day17 Notebook 已离线执行 10 个单元且无错误；38 项 Day17 测试和 419 项完整 Python 回归测试均已通过。
+
+### ✅ Day16 — 已完成（Unity API 知识检索）
+
+- 在 Project Understanding 与 Architecture 之间加入确定性的 Unity Knowledge 节点，不增加新的 LLM Agent；
+- 按项目本地知识、版本化缓存、受控联网顺序检索，并默认保持离线；
+- 联网仅允许 Unity 官方文档域名，校验 HTTPS、重定向、内容边界、版本匹配和提示词注入；
+- Architecture、Coder、Reviewer 与 Repair 最多接收 3 条经过复核的只读证据，不能扩大需求契约；
+- UI 展示检索状态、Unity 版本、匹配结果、标题和官方链接，不暴露完整远程正文；
+- 离线 Notebook、真实 `Object.Destroy` 官方文档探针及 380 项完整 Python 回归测试均已通过。
 
 ### 🔭 后续计划
 
