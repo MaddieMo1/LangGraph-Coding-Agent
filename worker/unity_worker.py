@@ -41,7 +41,7 @@ def run_worker_job(
     job = _read_job(job_path)
     started_at = _timestamp(clock())
     marker_path = _write_running_marker(state_path, job, started_at)
-    sandbox_root = Path(tempfile.mkdtemp(prefix="coding-agent-unity-worker-"))
+    sandbox_root = _create_sandbox(state_path, job["job_id"])
     sandbox_project = sandbox_root / "Project"
     outcome = None
     sandbox_removed = False
@@ -204,6 +204,15 @@ def _write_running_marker(state_path, job, started_at):
     marker_path = running_path / f"{job['job_id']}.json"
     _atomic_write_json(marker_path, {"job": job, "started_at": started_at})
     return marker_path
+
+
+def _create_sandbox(state_path, job_id):
+    if not state_path:
+        return Path(tempfile.mkdtemp(prefix="coding-agent-unity-worker-"))
+    sandbox_root = Path(state_path).resolve() / "sandboxes" / job_id
+    sandbox_root.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_root.mkdir()
+    return sandbox_root
 
 
 def _complete_running_marker(marker_path):

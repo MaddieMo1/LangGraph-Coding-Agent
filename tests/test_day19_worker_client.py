@@ -168,11 +168,15 @@ class LocalUnityWorkerClientTest(unittest.TestCase):
         client = self._client(process_factory=HangingProcess)
         job = self._job()
         client.start(job, self.bundle)
+        sandbox = self.state / "worker" / "sandboxes" / job["job_id"]
+        sandbox.mkdir(parents=True)
+        (sandbox / "snapshot.txt").write_text("owned", encoding="utf-8")
 
         self.assertFalse(client.cancel("f" * 64))
         self.assertFalse(captured["process"].terminated)
         self.assertTrue(client.cancel(job["job_id"]))
         self.assertTrue(captured["process"].terminated)
+        self.assertFalse(sandbox.exists())
 
     def test_wait_is_bounded_and_stops_the_tracked_process(self):
         captured = {}

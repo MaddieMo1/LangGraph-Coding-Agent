@@ -87,10 +87,12 @@ class RemoteProcessExecutor:
         ).start()
 
     def cancel(self, job_id):
+        with self._lock:
+            self._cancelled.add(job_id)
         cancelled = self.client.cancel(job_id)
-        if cancelled:
+        if not cancelled:
             with self._lock:
-                self._cancelled.add(job_id)
+                self._cancelled.discard(job_id)
         return cancelled
 
 
@@ -239,7 +241,8 @@ def create_remote_worker_app(
         if cancelled:
             job = store.job_manifest(job_id)
             result = _failure_result(
-                job, worker_id, "cancelled", "worker", "WORKER_CANCELLED", clock
+                job, worker_id, "cancelled", "worker", "WORKER_CANCELLED", clock,
+                sandbox_removed=True,
             )
             store.complete(job_id, result, {}, _timestamp(clock()))
         return _public_status(store.get_job(job_id), worker_id)
@@ -341,7 +344,9 @@ def _complete_job(store, job, result, artifacts, worker_id, max_artifact_size, c
     store.complete(job["job_id"], result, artifacts, _timestamp(clock()))
 
 
-def _failure_result(job, worker_id, status, owner, code, clock):
+def _failure_result(
+    job, worker_id, status, owner, code, clock, *, sandbox_removed=False
+):
     now = _timestamp(clock())
     return build_worker_result(
         job, status=status, worker_id=worker_id, started_at=now, finished_at=now,
@@ -353,7 +358,10 @@ def _failure_result(job, worker_id, status, owner, code, clock):
                 "inconclusive": 0, "duration": 0.0,
             },
         },
-        artifacts=[], cleanup={"sandbox_removed": False, "process_stopped": True},
+        artifacts=[], cleanup={
+            "sandbox_removed": bool(sandbox_removed),
+            "process_stopped": True,
+        },
     )
 
 

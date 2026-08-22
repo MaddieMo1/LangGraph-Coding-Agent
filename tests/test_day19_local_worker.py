@@ -131,6 +131,7 @@ class LocalUnityWorkerTest(unittest.TestCase):
             worker_id="local-worker",
             network_isolation_enforced=True,
             executor=executor,
+            state_path=self.root / "worker-state",
         )
 
         self.assertEqual("passed", result["status"])
@@ -138,6 +139,10 @@ class LocalUnityWorkerTest(unittest.TestCase):
         self.assertTrue(result_path.is_file())
         self.assertEqual(result, json.loads(result_path.read_text(encoding="utf-8")))
         self.assertFalse(Path(executor.project_path).exists())
+        self.assertEqual(
+            self.root / "worker-state" / "sandboxes" / job["job_id"],
+            Path(executor.project_path).parent,
+        )
         self.assertFalse(list(result_path.parent.glob("*.tmp-*")))
 
     def test_rejects_job_when_default_network_isolation_is_not_enforced(self):

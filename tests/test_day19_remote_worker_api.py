@@ -190,6 +190,8 @@ class RemoteWorkerApiTest(unittest.TestCase):
         self.assertEqual("cancelled", first.json()["status"])
         self.assertEqual(first.json(), second.json())
         self.assertEqual([job["job_id"]], self.executor.cancelled)
+        result = self._request("GET", f"/worker/v1/jobs/{job['job_id']}/result")
+        self.assertTrue(result.json()["cleanup"]["sandbox_removed"])
 
     def test_rejects_invalid_bundle_and_oversized_request(self):
         job = self._job()

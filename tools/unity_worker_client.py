@@ -150,6 +150,7 @@ class LocalUnityWorkerClient:
         while process.poll() is None:
             if self.monotonic() >= deadline:
                 self._stop_process(process)
+                self._cleanup_sandbox(job_id)
                 self._active.pop(job_id, None)
                 raise UnityWorkerClientError(
                     "WORKER_CLIENT_TIMEOUT", "local worker client timed out"
@@ -214,7 +215,14 @@ class LocalUnityWorkerClient:
         if handle is None:
             return False
         self._stop_process(handle["process"])
+        self._cleanup_sandbox(job_id)
         return True
+
+    def _cleanup_sandbox(self, job_id):
+        shutil.rmtree(
+            self.state_path / "worker" / "sandboxes" / job_id,
+            ignore_errors=True,
+        )
 
     @staticmethod
     def _stop_process(process):
